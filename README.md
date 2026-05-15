@@ -1,23 +1,36 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <title>sky2kang의 GitHub Pages</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 50px auto;
-            text-align: center;
-            background-color: #f0f0f0;
-        }
-        h1 { color: #333; }
-        p  { color: #666; }
-    </style>
-</head>
-<body>
-    <h1>🚀 sky2kang의 첫번째 웹사이트</h1>
-    <p>GitHub Pages로 만든 나의 첫번째 웹페이지입니다!</p>
-    <p>GitHub: <a href="https://github.com/sky2kang">@sky2kang</a></p>
-</body>
-</html>
+# 🚀 my-first-repo
+
+> 나의 첫번째 GitHub 샘플 저장소입니다.
+
+---
+
+## 👋 소개
+
+안녕하세요! **sky2kang**의 GitHub 첫 번째 저장소입니다.  
+이 저장소는 GitHub 사용법을 익히기 위해 만들어졌습니다.
+
+---
+
+## 📁 저장소 구성
+
+| 파일명 | 설명 |
+|--------|------|
+| README.md | 저장소 소개 파일 |
+
+---
+
+## 🛠️ 앞으로 추가할 것들
+
+- [ ] 첫 번째 코드 파일 추가
+- [ ] 프로젝트 구조 정리
+- [ ] 협업 실습
+
+---
+
+## 📬 연락처
+
+- GitHub: [@sky2kang](https://github.com/sky2kang)
+
+---
+
+⭐ 이 저장소가 도움이 됐다면 Star를 눌러주세요!
