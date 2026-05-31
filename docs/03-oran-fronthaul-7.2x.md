@@ -286,3 +286,35 @@ $ oru_app --demo-prach
 prach demo: PRACH occasion scheduled (frame=4 slot=0 PRB[0..12) root=22)
 prach demo: detect DETECTED shift=35 (tx=35) ratio=97.2
 ```
+
+## 11. 디지털 빔포밍 가중치 적용
+
+C-plane의 `beamId`는 O-RU의 빔포밍 가중치 테이블에서 안테나별 복소
+가중치 집합으로 매핑됩니다. 단일 데이터 스트림 s에 대해 안테나 출력은:
+
+```
+y_a[n] = w_a * s[n]      (안테나 a = 0..num_ant-1)
+```
+
+가중치의 위상이 빔을 조향(steer)하고, 크기가 테이퍼링합니다. IFFT/RF
+체인 이전에 수행되는 디지털 빔포밍의 핵심입니다.
+
+`src/fronthaul/beamform.c` (Q1.15 고정소수점 가중치, 최대 4T):
+
+- `bf_set_beam(beamId, w)` — beamId별 안테나 가중치 벡터 등록.
+- `bf_set_steering_beam(beamId, theta)` — 반파장 ULA 조향 빔 생성:
+  `w_a = exp(j·a·π·sin(theta))` (단위 크기).
+- `bf_apply(beamId, in, n, out[])` — 입력 스트림에 가중치를 복소 곱하여
+  안테나별 출력 생성.
+
+CLI `oru_app --demo-beamform` (30° 조향 → 안테나마다 90° 위상 증가):
+
+```
+$ oru_app --demo-beamform
+bf demo: beam 1 steering 30 deg, 4 antennas
+bf demo:   ant0 weight = (+32767, +0j) Q1.15
+bf demo:   ant1 weight = (+0, +32767j) Q1.15
+bf demo:   ant2 weight = (-32767, +0j) Q1.15
+bf demo:   ant3 weight = (+0, -32767j) Q1.15
+bf demo: in[0]=(8000,0) -> ant0=(8000,0) ant1=(0,8000) ant2=(-8000,0) ant3=(0,-8000)
+```

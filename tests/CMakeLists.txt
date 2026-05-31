@@ -49,3 +49,7 @@ add_test(NAME fh_packet COMMAND test_fh_packet)
 add_executable(test_prach test_prach.c)
 target_link_libraries(test_prach PRIVATE oru_core)
 add_test(NAME prach COMMAND test_prach)
+
+add_executable(test_beamform test_beamform.c)
+target_link_libraries(test_beamform PRIVATE oru_core)
+add_test(NAME beamform COMMAND test_beamform)

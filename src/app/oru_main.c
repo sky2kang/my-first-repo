@@ -21,6 +21,7 @@
 #include "oru/fh_packet.h"
 #include "oru/cu_match.h"
 #include "oru/prach.h"
+#include "oru/beamform.h"
 #include "oru/yang.h"
 
 #include <math.h>
@@ -221,6 +222,42 @@ static int run_prach_demo(void)
     return (d.detected && d.shift == ue_shift) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+/*
+ * Beamforming demo (no radio): build a steering beam for a beamId and apply
+ * it to a single data stream, printing the per-antenna weights. Shows the
+ * C-plane beamId -> per-antenna weight -> IQ path on a 4T array.
+ */
+static int run_bf_demo(void)
+{
+    bf_table_t t;
+    if (bf_init(&t, 4) != ORU_OK)
+        return EXIT_FAILURE;
+
+    const uint16_t beam_id = 1;
+    const double theta = 30.0;
+    if (bf_set_steering_beam(&t, beam_id, theta) != ORU_OK)
+        return EXIT_FAILURE;
+
+    const bf_beam_t *b = bf_get_beam(&t, beam_id);
+    printf("bf demo: beam %u steering %.0f deg, %u antennas\n",
+           beam_id, theta, b->num_ant);
+    for (uint8_t a = 0; a < b->num_ant; a++)
+        printf("bf demo:   ant%u weight = (%+d, %+dj) Q1.15\n",
+               a, b->w[a].re, b->w[a].im);
+
+    oru_iq16_t in[2] = { {8000, 0}, {0, 8000} };
+    oru_iq16_t a0[2], a1[2], a2[2], a3[2];
+    oru_iq16_t *out[BF_MAX_ANTENNAS] = { a0, a1, a2, a3 };
+    if (bf_apply(&t, beam_id, in, 2, out) != ORU_OK)
+        return EXIT_FAILURE;
+
+    printf("bf demo: in[0]=(%d,%d) -> ant0=(%d,%d) ant1=(%d,%d) "
+           "ant2=(%d,%d) ant3=(%d,%d)\n",
+           in[0].i, in[0].q, a0[0].i, a0[0].q, a1[0].i, a1[0].q,
+           a2[0].i, a2[0].q, a3[0].i, a3[0].q);
+    return EXIT_SUCCESS;
+}
+
 static int opt_flag(int argc, char **argv, const char *flag)
 {
     for (int i = 1; i < argc; i++)
@@ -319,6 +356,8 @@ int main(int argc, char **argv)
         return run_fh_demo();
     if (opt_flag(argc, argv, "--demo-prach"))
         return run_prach_demo();
+    if (opt_flag(argc, argv, "--demo-beamform"))
+        return run_bf_demo();
 
 #ifdef HAL_TARGET
     const char *build = "target";
