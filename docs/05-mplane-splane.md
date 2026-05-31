@@ -36,6 +36,9 @@ YANG 인스턴스 데이터에 해당).
   전에 이 검증을 호출**하여, NETCONF 서버가 잘못된 edit-config를
   거부하는 동작을 모사.
 - `yang_carrier_to_json()` — `tx/rx-array-carriers` 트리로 직렬화.
+- `yang_carrier_from_json()` — JSON 인스턴스 데이터를 파싱해
+  carrier config로 역변환(의존성 없는 미니 리더). 파싱 후 자동 검증되어
+  반환 시 항상 유효. export→parse round-trip 테스트로 보장.
 - CLI: `oru_app --export-yang` 로 검증 후 JSON을 표준출력에 인쇄.
   샘플 결과는 `config/yang/oru-uplane-conf.sample.json`.
 

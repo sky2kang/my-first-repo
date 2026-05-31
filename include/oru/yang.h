@@ -31,4 +31,21 @@ oru_status_t yang_validate_carrier(const oru_carrier_cfg_t *cfg,
 int yang_carrier_to_json(const oru_carrier_cfg_t *cfg,
                          char *buf, size_t buf_len);
 
+/*
+ * Parse JSON instance data (as produced by yang_carrier_to_json, or an
+ * equivalent o-ran-uplane-conf document) back into a carrier config.
+ *
+ * This is a small, dependency-free reader: it extracts the leaves it needs
+ * from the tx-array-carriers entry by name (absolute-frequency-center,
+ * channel-bandwidth, subcarrier-spacing, duplex-scheme, number-of-antennas,
+ * and the carrier name -> band). The result is validated before returning,
+ * so on ORU_OK the config is guaranteed to satisfy yang_validate_carrier().
+ *
+ * Returns ORU_OK on success, or ORU_ERR_PROTO / ORU_ERR_PARAM on a missing
+ * leaf or constraint violation (with a reason in err if provided).
+ */
+oru_status_t yang_carrier_from_json(const char *json,
+                                    oru_carrier_cfg_t *out,
+                                    char *err, size_t err_len);
+
 #endif /* ORU_YANG_H */

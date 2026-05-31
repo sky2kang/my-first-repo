@@ -73,12 +73,54 @@ static void test_json_buffer_too_small(void)
     assert(yang_carrier_to_json(&c, json, sizeof(json)) < 0);
 }
 
+static void test_json_roundtrip(void)
+{
+    oru_carrier_cfg_t c = good_cfg();
+    char json[1024];
+    assert(yang_carrier_to_json(&c, json, sizeof(json)) > 0);
+
+    oru_carrier_cfg_t back;
+    char err[96];
+    assert(yang_carrier_from_json(json, &back, err, sizeof(err)) == ORU_OK);
+
+    assert(back.center_freq_hz == c.center_freq_hz);
+    assert(back.bandwidth_hz == c.bandwidth_hz);
+    assert(back.scs_hz == c.scs_hz);
+    assert(back.num_tx == c.num_tx);
+    assert(back.num_rx == c.num_rx);
+    assert(strcmp(back.duplex, c.duplex) == 0);
+    assert(strcmp(back.band, c.band) == 0);
+}
+
+static void test_json_parse_errors(void)
+{
+    oru_carrier_cfg_t back;
+    char err[96];
+
+    /* missing required leaf */
+    const char *missing = "{ \"subcarrier-spacing\": 30000 }";
+    assert(yang_carrier_from_json(missing, &back, err, sizeof(err))
+           == ORU_ERR_PROTO);
+
+    /* present but constraint-violating (SCS invalid) -> validation fails */
+    const char *bad =
+        "{ \"name\": \"n78-tx\","
+        "  \"absolute-frequency-center\": 3500000000,"
+        "  \"channel-bandwidth\": 100000,"
+        "  \"subcarrier-spacing\": 7500,"
+        "  \"number-of-antennas\": 4 }";
+    assert(yang_carrier_from_json(bad, &back, err, sizeof(err))
+           == ORU_ERR_PARAM);
+}
+
 int main(void)
 {
     test_valid();
     test_invalid_cases();
     test_json_export();
     test_json_buffer_too_small();
+    test_json_roundtrip();
+    test_json_parse_errors();
     printf("test_yang: PASS\n");
     return 0;
 }

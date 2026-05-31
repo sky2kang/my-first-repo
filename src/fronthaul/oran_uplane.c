@@ -12,6 +12,7 @@
 #include "oru/fronthaul.h"
 #include "oru/bfp.h"
 #include "oru/mulaw.h"
+#include "oru/modcomp.h"
 #include "oru/log.h"
 
 #include <string.h>
@@ -42,9 +43,10 @@ static size_t payload_bytes(uint8_t comp_meth, uint16_t num_prb,
 {
     size_t n = (size_t)num_prb * RE_PER_PRB;
     switch (comp_meth) {
-    case ORAN_COMP_BFP:   return (size_t)num_prb * bfp_prb_bytes(iq_width);
-    case ORAN_COMP_MULAW: return mulaw_bytes(n, iq_width);
-    default:              return n * 2u * sizeof(int16_t);  /* NONE */
+    case ORAN_COMP_BFP:        return (size_t)num_prb * bfp_prb_bytes(iq_width);
+    case ORAN_COMP_MULAW:      return mulaw_bytes(n, iq_width);
+    case ORAN_COMP_MODULATION: return (size_t)num_prb * modcomp_prb_bytes(iq_width);
+    default:                   return n * 2u * sizeof(int16_t);  /* NONE */
     }
 }
 
@@ -64,6 +66,8 @@ static int pack_iq(uint8_t comp_meth, uint8_t iq_width, uint16_t num_prb,
         return bfp_compress(iq, num_prb, iq_width, dst, dst_len);
     case ORAN_COMP_MULAW:
         return mulaw_compress(iq, n, iq_width, dst, dst_len);
+    case ORAN_COMP_MODULATION:
+        return modcomp_compress(iq, num_prb, iq_width, dst, dst_len);
     default: {  /* ORAN_COMP_NONE */
         uint8_t *p = dst;
         for (size_t k = 0; k < n; k++) {
@@ -95,6 +99,9 @@ static int unpack_iq(uint8_t comp_meth, uint8_t iq_width, uint16_t num_prb,
                               max_samples);
     case ORAN_COMP_MULAW:
         return mulaw_decompress(src, src_len, n, iq_width, iq, max_samples);
+    case ORAN_COMP_MODULATION:
+        return modcomp_decompress(src, src_len, num_prb, iq_width, iq,
+                                  max_samples);
     default: {  /* ORAN_COMP_NONE */
         const uint8_t *p = src;
         for (size_t k = 0; k < n; k++) {
@@ -109,7 +116,8 @@ static int unpack_iq(uint8_t comp_meth, uint8_t iq_width, uint16_t num_prb,
 
 static int comp_meth_ok(uint8_t m)
 {
-    return m == ORAN_COMP_NONE || m == ORAN_COMP_BFP || m == ORAN_COMP_MULAW;
+    return m == ORAN_COMP_NONE || m == ORAN_COMP_BFP ||
+           m == ORAN_COMP_MULAW || m == ORAN_COMP_MODULATION;
 }
 
 /* The wire iqWidth field is 4 bits; methods that use a per-component width

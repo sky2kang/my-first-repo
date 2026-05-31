@@ -15,6 +15,8 @@
 #include "oru/mplane.h"
 #include "oru/fronthaul.h"
 #include "oru/fh_sched.h"
+#include "oru/datapath.h"
+#include "oru/slot_loop.h"
 #include "oru/yang.h"
 
 #include <signal.h>
@@ -55,13 +57,57 @@ static int opt_flag(int argc, char **argv, const char *flag)
     return 0;
 }
 
+/* Virtual clock for the SIM slot loop: advances one slot per work call. */
+typedef struct {
+    uint64_t now_ns;
+    uint32_t slot_ns;
+} sim_clock_t;
+
+static uint64_t sim_clock(void *ctx)
+{
+    return ((sim_clock_t *)ctx)->now_ns;
+}
+
+/* Per-slot work: process one DL packet (on time) and emit one UL packet. */
+static oru_status_t sim_slot_work(void *ctx, uint64_t slot,
+                                  uint64_t boundary_ns, datapath_t *dp)
+{
+    sim_clock_t *clk = ctx;
+
+    /* Build a DL U-plane packet and feed it at an on-time arrival. */
+    uint8_t dl[2048];
+    oru_iq16_t iq[2 * 12];
+    for (size_t k = 0; k < sizeof(iq) / sizeof(iq[0]); k++) {
+        iq[k].i = (int16_t)(k + slot);
+        iq[k].q = (int16_t)-(int16_t)(k + slot);
+    }
+    oran_uplane_hdr_t h = {
+        .num_prb = 2, .comp_meth = ORAN_COMP_BFP, .iq_bitwidth = 9,
+    };
+    int n = oran_uplane_encode(&h, iq, sizeof(iq) / sizeof(iq[0]),
+                               dl, sizeof(dl));
+    if (n > 0) {
+        uint64_t on_time = boundary_ns - 200000;  /* inside T2a window */
+        datapath_handle_dl(dp, dl, (size_t)n, boundary_ns, on_time);
+    }
+
+    /* Emit one UL packet on time. */
+    uint8_t ul[2048];
+    bool late = false;
+    datapath_build_ul(dp, 2, ORAN_COMP_BFP, 9, boundary_ns,
+                      boundary_ns + 100000, ul, sizeof(ul), &late);
+
+    clk->now_ns += clk->slot_ns;
+    return ORU_OK;
+}
+
 /*
- * Demonstrate the fronthaul timing-window scheduler. In a real O-RU the
- * RX threads would call fh_sched_classify() for every fronthaul packet
- * against the PTP slot boundary; here we feed it a few synthetic DL
- * arrivals to show on-time / early / late classification and counters.
+ * Demonstrate the full slot-cadence datapath: a slot loop drives DL receive
+ * (with T2a window enforcement) and UL transmit (Ta3 deadline) for a few
+ * slots, then reports the datapath counters. On the target this loop would
+ * run on a CPU-pinned thread off the PTP clock.
  */
-static void demo_fh_scheduler(const oru_config_t *cfg, uint32_t scs_hz)
+static void demo_slot_loop(const oru_config_t *cfg, uint32_t scs_hz)
 {
     fh_sched_cfg_t scfg = {
         .t2a_min_ns = (uint32_t)oru_config_get_int(cfg, "fronthaul.t2a_min_ns", 100000),
@@ -70,29 +116,23 @@ static void demo_fh_scheduler(const oru_config_t *cfg, uint32_t scs_hz)
         .ta3_max_ns = (uint32_t)oru_config_get_int(cfg, "fronthaul.ta3_max_ns", 200000),
     };
 
-    fh_sched_t sched;
-    if (fh_sched_init(&sched, &scfg, scs_hz) != ORU_OK)
+    datapath_t dp;
+    if (datapath_init(&dp, &scfg, scs_hz, 0, 0) != ORU_OK)
         return;
 
-    const uint64_t t0 = 0;
-    uint64_t boundary = fh_sched_slot_boundary(&sched, t0, 1);
-    /* arrivals relative to boundary: too early, on-time, on-time, too late */
-    const uint64_t arrivals[] = {
-        boundary - scfg.t2a_max_ns - 1,   /* EARLY   */
-        boundary - scfg.t2a_max_ns,       /* ON_TIME */
-        boundary - scfg.t2a_min_ns,       /* ON_TIME */
-        boundary - scfg.t2a_min_ns + 1,   /* LATE    */
-    };
-    for (size_t i = 0; i < sizeof(arrivals) / sizeof(arrivals[0]); i++) {
-        fh_window_result_t r = fh_sched_classify(&sched, FH_DL, boundary,
-                                                 arrivals[i]);
-        LOGI(TAG, "fh demo: DL arrival[%zu] -> %s", i,
-             fh_window_result_str(r));
-    }
-    LOGI(TAG, "fh demo: DL stats on_time=%llu early=%llu late=%llu",
-         (unsigned long long)sched.stats.dl_on_time,
-         (unsigned long long)sched.stats.dl_early,
-         (unsigned long long)sched.stats.dl_late);
+    sim_clock_t clk = { .now_ns = 0, .slot_ns = fh_sched_slot_ns(scs_hz) };
+    slot_loop_t lp;
+    if (slot_loop_init(&lp, &dp, sim_clock, sim_slot_work, &clk, 0,
+                       scs_hz) != ORU_OK)
+        return;
+
+    slot_loop_run(&lp, 5);
+    LOGI(TAG, "datapath demo: DL delivered=%llu dropped=%llu | "
+              "UL sent=%llu late=%llu",
+         (unsigned long long)dp.stats.dl_delivered,
+         (unsigned long long)dp.stats.dl_dropped_late,
+         (unsigned long long)dp.stats.ul_sent,
+         (unsigned long long)dp.stats.ul_late);
 }
 
 int main(int argc, char **argv)
@@ -193,7 +233,7 @@ int main(int argc, char **argv)
          carrier.band, (unsigned long long)carrier.center_freq_hz,
          carrier.bandwidth_hz / 1000000u, carrier.num_tx, carrier.num_rx);
 
-    demo_fh_scheduler(cfg, carrier.scs_hz);
+    demo_slot_loop(cfg, carrier.scs_hz);
 
     /* Main service loop. The real datapath runs in fronthaul RX threads;
      * here we just keep the process alive and watch for loss of sync. */

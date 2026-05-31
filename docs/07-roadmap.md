@@ -18,9 +18,12 @@
 - [x] U-plane µ-law 압축 추가 (compMeth=3, `mulaw.c`, `test_mulaw`)
 - [x] 타이밍 윈도 ↔ RX/TX 경로 통합 + 데드라인 enforcement (`datapath.c`)
 - [x] 설정을 YANG 인스턴스(JSON)로 표현 + 검증 (`yang.c`, `--export-yang`)
-- [ ] U-plane: modulation compression (compMeth=4) 등 추가 압축 방식
-- [ ] 프론트홀 RX/TX 실시간 스레드 + 슬롯 타이밍 루프
-- [ ] YANG 인스턴스 입력(파싱) 지원 — 현재는 export(검증/출력)만
+- [x] U-plane modulation compression (compMeth=4, `modcomp.c`, `test_modcomp`)
+- [x] 슬롯-cadence 처리 루프 + 데이터패스 구동 (`slot_loop.c`, `test_slot_loop`)
+- [x] YANG 인스턴스 입력 파싱 (`yang_carrier_from_json`, round-trip 테스트)
+
+> Phase 1(호스트 기능 심화) 항목 완료. 남은 실시간화(전용 스레드/CPU 핀,
+> 실제 PTP 클럭 연동)와 실제 패킷 I/O는 Phase 2(하드웨어)에서 다룹니다.
 
 ## Phase 2 — 플랫폼 brings-up (HW 필요)
 - [ ] Vivado PL 디자인: JESD204 IP + AXI 매핑

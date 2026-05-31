@@ -16,9 +16,10 @@ typedef enum {
 
 /* U-plane IQ compression method (udCompHdr compMeth field). */
 typedef enum {
-    ORAN_COMP_NONE  = 0,  /* no compression, 16-bit IQ                  */
-    ORAN_COMP_BFP   = 1,  /* block floating point (per-PRB exponent)    */
-    ORAN_COMP_MULAW = 3,  /* µ-law companding (non-linear, fixed-rate)  */
+    ORAN_COMP_NONE   = 0,  /* no compression, 16-bit IQ                  */
+    ORAN_COMP_BFP    = 1,  /* block floating point (per-PRB exponent)    */
+    ORAN_COMP_MULAW  = 3,  /* µ-law companding (non-linear, fixed-rate)  */
+    ORAN_COMP_MODULATION = 4, /* modulation compression (constellation)  */
 } oran_comp_meth_t;
 
 /* --- C-plane: minimal Section Type 1 descriptor --- */

@@ -68,7 +68,14 @@ DU가 RU에게 "다음 슬롯에 어떤 자원(PRB)에서 송/수신하라"를 �
     크기에 더 많은 코드를, 큰 크기에 적은 코드를 할당(로그 특성).
     고정 비율(데이터와 무관하게 `iqWidth` 비트/성분)이며 소신호
     충실도가 균일 양자화보다 우수. 구현: `src/fronthaul/mulaw.c`.
-  - BFP·µ-law는 MSB-first 비트 패커(`include/oru/bitpack.h`)를 공유.
+  - `ORAN_COMP_MODULATION` (4): **modulation compression** — 알려진
+    변조 차수(BPSK/QPSK/16/64/256QAM)의 콘스텔레이션 격자를 이용.
+    full IQ 대신 PRB당 스케일러 + RE별 콘스텔레이션 인덱스를 전송하고
+    수신측이 `IQ = scaler × constellation[index]`로 복원. `iqWidth`
+    필드는 변조 차수(bits/symbol)로 재사용. 깨끗한 변조 신호에 대해
+    최고의 압축률. 구현: `src/fronthaul/modcomp.c`.
+  - BFP·µ-law·modulation은 MSB-first 비트 패커
+    (`include/oru/bitpack.h`)를 공유.
 - 시간 정렬: C-plane의 section과 U-plane 메시지가 `frame/subframe/slot/symbol`로
   매칭됩니다 (S-plane PTP 시간 기준).
 
@@ -149,6 +156,20 @@ O-RU는 정해진 윈도(window) 안에 IQ를 처리/전송해야 합니다.
 - `datapath_build_ul()` — `hal_rx_iq()`로 IQ 캡처 후 Ta3 데드라인
   검사: 마감을 넘겨도 데이터 손실을 막기 위해 **패킷은 전송하되**
   `ul_late`로 플래그(추후 o-ran-fm 알람 연동).
+
+### 5.3 슬롯-cadence 처리 루프
+
+`src/fronthaul/slot_loop.c`는 데이터패스를 **슬롯 단위로 주기 구동**
+합니다. 실제 O-RU에서는 CPU에 핀된 전용 스레드가 PTP 클럭에서 매 슬롯
+경계에 깨어나 그 슬롯의 U-plane 작업을 처리합니다.
+
+- **주입 가능한 클럭(`slot_clock_fn`)** 과 **슬롯별 작업 콜백
+  (`slot_work_fn`)** 으로 구성 — 호스트에서는 가상 클럭으로 시간을
+  결정론적으로 주입해 테스트 가능, 타겟에서는 동일 로직이 실제 PTP
+  클럭·스레드 위에서 동작.
+- `slot_loop_run(max_slots)` 가 슬롯 경계를 계산하고 콜백을 호출하며
+  슬롯 카운터를 누적. `oru_app`은 OPERATIONAL에서 5슬롯 동안 DL 수신 +
+  UL 송신 데이터패스를 시연합니다.
 
 ## 6. 본 저장소에서의 데이터 흐름 (DL 예시)
 
