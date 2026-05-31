@@ -40,6 +40,8 @@ add_library(oru_core STATIC
     src/fronthaul/fh_sched.c
     src/fronthaul/datapath.c
     src/fronthaul/slot_loop.c
+    src/fronthaul/cu_match.c
+    src/fronthaul/comp_bench.c
     src/fronthaul/fronthaul.c
     src/splane/splane.c
     src/mplane/mplane.c

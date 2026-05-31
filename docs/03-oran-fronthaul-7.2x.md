@@ -190,3 +190,42 @@ O-RU는 정해진 윈도(window) 안에 IQ를 처리/전송해야 합니다.
 UL은 역방향: `hal_rx_iq()`(ADRV9025→JESD204→PL) →
 `datapath_build_ul()`(Ta3 데드라인 검사 + `oran_uplane_encode()`) →
 eCPRI로 DU에 전송.
+
+## 7. C-plane ↔ U-plane 시간 정합 (matcher)
+
+DU는 먼저 C-plane section으로 슬롯을 스케줄("frame F, slot SL, symbol
+SYM에서 PRB [start, start+num) 예상")하고, 뒤이은 U-plane 패킷이 그
+grant의 IQ를 나릅니다. O-RU는 도착한 U-plane을 어떤 grant가 허가한
+것인지 짝지어야 합니다.
+
+`src/fronthaul/cu_match.c`가 이 검증을 수행합니다:
+
+- `cu_match_add_section1/3()` — C-plane grant를 (frame,subframe,slot,
+  symbol) 키로 등록.
+- `cu_match_check(u)` — U-plane 헤더를 outstanding grant와 대조:
+  **OK**(PRB가 grant 범위 내), **NO_GRANT**(해당 슬롯 grant 없음 = orphan),
+  **OUT_OF_RANGE**(PRB가 grant 밖). 각 결과를 카운트.
+- `cu_match_grant_complete()` — 해당 grant의 U-plane PRB 누적이 numPrb에
+  도달했는지(완전 커버) 확인.
+
+실제 DU 없이 호스트에서 스케줄/데이터 페어링을 end-to-end로 검증합니다.
+
+## 8. 압축 성능 측정
+
+`src/fronthaul/comp_bench.c`는 동일 신호에 대해 각 압축 방식의
+**압축률 vs 왕복 오차(max/RMSE)** 를 측정합니다. CLI로 표를 출력:
+
+```
+$ oru_app --bench-compression
+method                raw     comp  ratio     rmse
+none                 1536     1536   1.00      0.0
+bfp-12               1536     1184   1.30      1.9
+bfp-9                1536      896   1.71     18.1
+mulaw-9              1536      864   1.78     37.8
+mulaw-8              1536      768   2.00     69.2
+modcomp-64qam        1536      384   4.00    581.4
+modcomp-16qam        1536      288   5.33   1266.3
+```
+
+압축률이 높을수록 오차가 커지는 트레이드오프를 하드웨어 없이 비교해
+적절한 `iqWidth`/방식을 고를 수 있습니다(값은 합성 정현파 신호 기준).

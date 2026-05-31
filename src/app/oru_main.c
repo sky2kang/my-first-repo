@@ -17,7 +17,10 @@
 #include "oru/fh_sched.h"
 #include "oru/datapath.h"
 #include "oru/slot_loop.h"
+#include "oru/comp_bench.h"
 #include "oru/yang.h"
+
+#include <math.h>
 
 #include <signal.h>
 #include <string.h>
@@ -47,6 +50,45 @@ static const char *opt_value(int argc, char **argv, const char *flag,
         if (strcmp(argv[i], flag) == 0)
             return argv[i + 1];
     return def;
+}
+
+/*
+ * Print a compression comparison table over a synthetic signal: for each
+ * method/width, the ratio vs raw 16-bit IQ and the round-trip RMSE. Handy
+ * for picking an iqWidth without any hardware.
+ */
+static int run_comp_benchmark(void)
+{
+    enum { NPRB = 32, NRE = NPRB * 12 };
+    static oru_iq16_t iq[NRE];
+    for (int k = 0; k < NRE; k++) {
+        iq[k].i = (int16_t)(8000.0 * sin(0.05 * k));
+        iq[k].q = (int16_t)(8000.0 * cos(0.05 * k));
+    }
+
+    const struct { uint8_t meth; uint8_t width; const char *name; } cases[] = {
+        { ORAN_COMP_NONE,       16, "none"       },
+        { ORAN_COMP_BFP,        12, "bfp-12"     },
+        { ORAN_COMP_BFP,         9, "bfp-9"      },
+        { ORAN_COMP_MULAW,       9, "mulaw-9"    },
+        { ORAN_COMP_MULAW,       8, "mulaw-8"    },
+        { ORAN_COMP_MODULATION,  6, "modcomp-64qam" },
+        { ORAN_COMP_MODULATION,  4, "modcomp-16qam" },
+    };
+
+    printf("%-16s %8s %8s %6s %8s\n",
+           "method", "raw", "comp", "ratio", "rmse");
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        comp_bench_result_t r;
+        if (comp_bench_run(iq, NPRB, cases[i].meth, cases[i].width, &r)
+            != ORU_OK) {
+            printf("%-16s  (failed)\n", cases[i].name);
+            continue;
+        }
+        printf("%-16s %8zu %8zu %6.2f %8.1f\n",
+               cases[i].name, r.raw_bytes, r.comp_bytes, r.ratio, r.rmse);
+    }
+    return EXIT_SUCCESS;
 }
 
 static int opt_flag(int argc, char **argv, const char *flag)
@@ -139,6 +181,10 @@ int main(int argc, char **argv)
 {
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
+
+    /* Offline tools that need no config/radio. */
+    if (opt_flag(argc, argv, "--bench-compression"))
+        return run_comp_benchmark();
 
 #ifdef HAL_TARGET
     const char *build = "target";

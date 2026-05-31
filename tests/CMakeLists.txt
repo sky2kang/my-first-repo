@@ -33,3 +33,11 @@ add_test(NAME slot_loop COMMAND test_slot_loop)
 add_executable(test_yang test_yang.c)
 target_link_libraries(test_yang PRIVATE oru_core)
 add_test(NAME yang COMMAND test_yang)
+
+add_executable(test_cu_match test_cu_match.c)
+target_link_libraries(test_cu_match PRIVATE oru_core)
+add_test(NAME cu_match COMMAND test_cu_match)
+
+add_executable(test_comp_bench test_comp_bench.c)
+target_link_libraries(test_comp_bench PRIVATE oru_core)
+add_test(NAME comp_bench COMMAND test_comp_bench)
