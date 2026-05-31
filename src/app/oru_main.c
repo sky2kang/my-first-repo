@@ -15,6 +15,7 @@
 #include "oru/mplane.h"
 #include "oru/fronthaul.h"
 #include "oru/fh_sched.h"
+#include "oru/yang.h"
 
 #include <signal.h>
 #include <string.h>
@@ -44,6 +45,14 @@ static const char *opt_value(int argc, char **argv, const char *flag,
         if (strcmp(argv[i], flag) == 0)
             return argv[i + 1];
     return def;
+}
+
+static int opt_flag(int argc, char **argv, const char *flag)
+{
+    for (int i = 1; i < argc; i++)
+        if (strcmp(argv[i], flag) == 0)
+            return 1;
+    return 0;
 }
 
 /*
@@ -115,6 +124,28 @@ int main(int argc, char **argv)
     if (!cfg) {
         LOGE(TAG, "failed to load config %s", cfg_path);
         return EXIT_FAILURE;
+    }
+
+    /* --export-yang: validate config and print YANG/JSON instance data,
+     * then exit (a handy M-plane sanity check without booting the radio). */
+    if (opt_flag(argc, argv, "--export-yang")) {
+        oru_carrier_cfg_t c;
+        if (oru_config_get_carrier(cfg, &c) != ORU_OK) {
+            oru_config_free(cfg);
+            return EXIT_FAILURE;
+        }
+        char err[96];
+        if (yang_validate_carrier(&c, err, sizeof(err)) != ORU_OK) {
+            LOGE(TAG, "config invalid: %s", err);
+            oru_config_free(cfg);
+            return EXIT_FAILURE;
+        }
+        char json[1024];
+        int n = yang_carrier_to_json(&c, json, sizeof(json));
+        if (n > 0)
+            fputs(json, stdout);
+        oru_config_free(cfg);
+        return (n > 0) ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     /* ---------- INIT ---------- */

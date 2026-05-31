@@ -64,6 +64,11 @@ DU가 RU에게 "다음 슬롯에 어떤 자원(PRB)에서 송/수신하라"를 �
     비트에 들어가면 지수=0이라 무손실, 그렇지 않으면 하위 비트가
     버려지는 손실 압축(일반적 BFP 트레이드오프).
   - 예: 9-bit BFP는 PRB당 48바이트(무압축) → 28바이트로 축소.
+  - `ORAN_COMP_MULAW` (3): **µ-law companding** — 비선형 압축. 작은
+    크기에 더 많은 코드를, 큰 크기에 적은 코드를 할당(로그 특성).
+    고정 비율(데이터와 무관하게 `iqWidth` 비트/성분)이며 소신호
+    충실도가 균일 양자화보다 우수. 구현: `src/fronthaul/mulaw.c`.
+  - BFP·µ-law는 MSB-first 비트 패커(`include/oru/bitpack.h`)를 공유.
 - 시간 정렬: C-plane의 section과 U-plane 메시지가 `frame/subframe/slot/symbol`로
   매칭됩니다 (S-plane PTP 시간 기준).
 
@@ -133,18 +138,34 @@ O-RU는 정해진 윈도(window) 안에 IQ를 처리/전송해야 합니다.
 `t2a_*_ns` / `ta3_*_ns`로 설정하며, `oru_app`이 OPERATIONAL 진입 시
 합성 도착 샘플로 분류 동작을 시연합니다.
 
+### 5.2 타이밍 ↔ 데이터패스 통합 (데드라인 enforcement)
+
+`src/fronthaul/datapath.c`가 스케줄러를 HAL·U-plane 코덱과 묶어
+실제 RX/TX 경로의 데드라인을 강제합니다.
+
+- `datapath_handle_dl()` — DL 패킷 도착 시 T2a 윈도로 분류:
+  **ON_TIME/EARLY → 디코드 후 `hal_tx_iq()`로 방출**, **LATE → 폐기**
+  (이미 슬롯 경계가 지나 방출 불가) 후 `dl_dropped_late` 카운트.
+- `datapath_build_ul()` — `hal_rx_iq()`로 IQ 캡처 후 Ta3 데드라인
+  검사: 마감을 넘겨도 데이터 손실을 막기 위해 **패킷은 전송하되**
+  `ul_late`로 플래그(추후 o-ran-fm 알람 연동).
+
 ## 6. 본 저장소에서의 데이터 흐름 (DL 예시)
 
 ```
-[DU] ──eCPRI(C-plane Sec1)──▶ oran_cplane_parse() ── 스케줄 메모
-[DU] ──eCPRI(U-plane IQ)────▶ oran_uplane_parse() ── IQ 압축해제
-                                        │
+[DU] ──eCPRI(C-plane Sec1)──▶ oran_cplane_decode() ── 스케줄 메모
+[DU] ──eCPRI(U-plane IQ)────▶ datapath_handle_dl()
+                                  │  fh_sched_classify(T2a)
+                                  ├─ LATE  → 폐기(드롭 카운트)
+                                  └─ ON_TIME/EARLY
+                                        │  oran_uplane_decode()
                                         ▼
-                              hal_adrv9025_tx_iq()  (PL DFE → JESD204 → ADRV9025)
+                              hal_tx_iq()  (PL DFE → JESD204 → ADRV9025)
                                         │
                                         ▼
                                    RF 방출 📶
 ```
 
-UL은 역방향: ADRV9025 수신 → JESD204 → PL(FFT/압축) → `oran_uplane_build()`
-→ eCPRI로 DU에 전송.
+UL은 역방향: `hal_rx_iq()`(ADRV9025→JESD204→PL) →
+`datapath_build_ul()`(Ta3 데드라인 검사 + `oran_uplane_encode()`) →
+eCPRI로 DU에 전송.

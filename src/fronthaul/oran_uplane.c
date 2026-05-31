@@ -11,6 +11,7 @@
  */
 #include "oru/fronthaul.h"
 #include "oru/bfp.h"
+#include "oru/mulaw.h"
 #include "oru/log.h"
 
 #include <string.h>
@@ -40,9 +41,11 @@ static size_t payload_bytes(uint8_t comp_meth, uint16_t num_prb,
                             uint8_t iq_width)
 {
     size_t n = (size_t)num_prb * RE_PER_PRB;
-    if (comp_meth == ORAN_COMP_BFP)
-        return (size_t)num_prb * bfp_prb_bytes(iq_width);
-    return n * 2u * sizeof(int16_t);   /* ORAN_COMP_NONE */
+    switch (comp_meth) {
+    case ORAN_COMP_BFP:   return (size_t)num_prb * bfp_prb_bytes(iq_width);
+    case ORAN_COMP_MULAW: return mulaw_bytes(n, iq_width);
+    default:              return n * 2u * sizeof(int16_t);  /* NONE */
+    }
 }
 
 /* Pack `num_prb` PRBs of IQ into `dst` per comp_meth. Returns bytes used
@@ -51,22 +54,27 @@ static size_t payload_bytes(uint8_t comp_meth, uint16_t num_prb,
 static int pack_iq(uint8_t comp_meth, uint8_t iq_width, uint16_t num_prb,
                    const oru_iq16_t *iq, uint8_t *dst, size_t dst_len)
 {
+    size_t n = (size_t)num_prb * RE_PER_PRB;
     size_t need = payload_bytes(comp_meth, num_prb, iq_width);
     if (dst_len < need)
         return ORU_ERR_PARAM;
 
-    if (comp_meth == ORAN_COMP_BFP)
+    switch (comp_meth) {
+    case ORAN_COMP_BFP:
         return bfp_compress(iq, num_prb, iq_width, dst, dst_len);
-
-    size_t n = (size_t)num_prb * RE_PER_PRB;
-    uint8_t *p = dst;
-    for (size_t k = 0; k < n; k++) {
-        *p++ = (uint8_t)(iq[k].i >> 8);
-        *p++ = (uint8_t)(iq[k].i & 0xff);
-        *p++ = (uint8_t)(iq[k].q >> 8);
-        *p++ = (uint8_t)(iq[k].q & 0xff);
+    case ORAN_COMP_MULAW:
+        return mulaw_compress(iq, n, iq_width, dst, dst_len);
+    default: {  /* ORAN_COMP_NONE */
+        uint8_t *p = dst;
+        for (size_t k = 0; k < n; k++) {
+            *p++ = (uint8_t)(iq[k].i >> 8);
+            *p++ = (uint8_t)(iq[k].i & 0xff);
+            *p++ = (uint8_t)(iq[k].q >> 8);
+            *p++ = (uint8_t)(iq[k].q & 0xff);
+        }
+        return (int)need;
     }
-    return (int)need;
+    }
 }
 
 /* Inverse of pack_iq(). Returns complex sample count or negative status. */
@@ -81,17 +89,34 @@ static int unpack_iq(uint8_t comp_meth, uint8_t iq_width, uint16_t num_prb,
     if (n > max_samples)
         return ORU_ERR_PARAM;
 
-    if (comp_meth == ORAN_COMP_BFP)
+    switch (comp_meth) {
+    case ORAN_COMP_BFP:
         return bfp_decompress(src, src_len, num_prb, iq_width, iq,
                               max_samples);
-
-    const uint8_t *p = src;
-    for (size_t k = 0; k < n; k++) {
-        iq[k].i = (int16_t)((p[0] << 8) | p[1]);
-        iq[k].q = (int16_t)((p[2] << 8) | p[3]);
-        p += 4;
+    case ORAN_COMP_MULAW:
+        return mulaw_decompress(src, src_len, n, iq_width, iq, max_samples);
+    default: {  /* ORAN_COMP_NONE */
+        const uint8_t *p = src;
+        for (size_t k = 0; k < n; k++) {
+            iq[k].i = (int16_t)((p[0] << 8) | p[1]);
+            iq[k].q = (int16_t)((p[2] << 8) | p[3]);
+            p += 4;
+        }
+        return (int)n;
     }
-    return (int)n;
+    }
+}
+
+static int comp_meth_ok(uint8_t m)
+{
+    return m == ORAN_COMP_NONE || m == ORAN_COMP_BFP || m == ORAN_COMP_MULAW;
+}
+
+/* The wire iqWidth field is 4 bits; methods that use a per-component width
+ * (BFP, µ-law) must fit 4..15 there (16 is encoded as 0). NONE ignores it. */
+static uint8_t effective_width(uint8_t comp_meth, uint8_t iq_width)
+{
+    return (comp_meth == ORAN_COMP_NONE) ? 16u : iq_width;
 }
 
 int oran_uplane_encode(const oran_uplane_hdr_t *h, const oru_iq16_t *iq,
@@ -99,7 +124,7 @@ int oran_uplane_encode(const oran_uplane_hdr_t *h, const oru_iq16_t *iq,
 {
     if (!h || !iq || !buf)
         return ORU_ERR_PARAM;
-    if (h->comp_meth != ORAN_COMP_NONE && h->comp_meth != ORAN_COMP_BFP)
+    if (!comp_meth_ok(h->comp_meth))
         return ORU_ERR_NOTSUP;
 
     size_t expect = (size_t)h->num_prb * RE_PER_PRB;
@@ -108,7 +133,7 @@ int oran_uplane_encode(const oran_uplane_hdr_t *h, const oru_iq16_t *iq,
         return ORU_ERR_PARAM;
     }
 
-    uint8_t width = (h->comp_meth == ORAN_COMP_BFP) ? h->iq_bitwidth : 16u;
+    uint8_t width = effective_width(h->comp_meth, h->iq_bitwidth);
     size_t need = UPLANE_HDR_SIZE + payload_bytes(h->comp_meth, h->num_prb,
                                                   width);
     if (len < need)
@@ -152,8 +177,7 @@ oru_status_t oran_uplane_decode(const uint8_t *buf, size_t len,
     out_hdr->comp_meth   = (uint8_t)((buf[8] >> 4) & 0x0f);
     out_hdr->iq_bitwidth = width_from_wire((uint8_t)(buf[8] & 0x0f));
 
-    if (out_hdr->comp_meth != ORAN_COMP_NONE &&
-        out_hdr->comp_meth != ORAN_COMP_BFP)
+    if (!comp_meth_ok(out_hdr->comp_meth))
         return ORU_ERR_NOTSUP;
 
     size_t n = (size_t)out_hdr->num_prb * RE_PER_PRB;
@@ -199,11 +223,6 @@ oru_status_t oran_uplane_decode(const uint8_t *buf, size_t len,
 #define RADIO_APP_HDR_SIZE 8u
 #define USEC_HDR_SIZE      8u
 
-static int comp_meth_ok(uint8_t m)
-{
-    return m == ORAN_COMP_NONE || m == ORAN_COMP_BFP;
-}
-
 int oran_uplane_msg_encode(const oran_radio_app_hdr_t *app,
                            const oran_uplane_section_t *sections,
                            size_t n_sections,
@@ -238,8 +257,8 @@ int oran_uplane_msg_encode(const oran_radio_app_hdr_t *app,
         if (sec->n_samples < expect)
             return ORU_ERR_PARAM;
 
-        uint8_t width = (sec->hdr.comp_meth == ORAN_COMP_BFP)
-                            ? sec->hdr.iq_bitwidth : 16u;
+        uint8_t width = effective_width(sec->hdr.comp_meth,
+                                        sec->hdr.iq_bitwidth);
         size_t pay = payload_bytes(sec->hdr.comp_meth, sec->hdr.num_prb,
                                    width);
         if (off + USEC_HDR_SIZE + pay > len)

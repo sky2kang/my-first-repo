@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "oru/mplane.h"
+#include "oru/yang.h"
 #include "oru/log.h"
 
 #define TAG "mplane"
@@ -27,6 +28,15 @@ oru_status_t mplane_apply_config(const oru_config_t *cfg,
     oru_status_t rc = oru_config_get_carrier(cfg, out_carrier);
     if (rc != ORU_OK)
         return rc;
+
+    /* Validate against the O-RAN/YANG constraints before applying, just as
+     * a NETCONF server would reject an invalid edit-config. */
+    char err[96];
+    rc = yang_validate_carrier(out_carrier, err, sizeof(err));
+    if (rc != ORU_OK) {
+        LOGE(TAG, "config rejected by YANG validation: %s", err);
+        return rc;
+    }
 
     LOGI(TAG, "applying config: band=%s bw=%uMHz scs=%ukHz %s tx=%u rx=%u",
          out_carrier->band,

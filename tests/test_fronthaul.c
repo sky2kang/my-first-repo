@@ -112,6 +112,9 @@ static void test_uplane(void)
     /* BFP at other widths */
     uplane_roundtrip(ORAN_COMP_BFP, 12, 1000, 1);
     uplane_roundtrip(ORAN_COMP_BFP, 8, 100, 1);
+    /* µ-law: lossy companding, error bounded (< 256 for small amplitudes) */
+    uplane_roundtrip(ORAN_COMP_MULAW, 8, 100, 0);
+    uplane_roundtrip(ORAN_COMP_MULAW, 12, 5000, 0);
 }
 
 /* Multi-section U-plane message: 3 sections with mixed compression. */

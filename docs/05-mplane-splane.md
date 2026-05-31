@@ -25,6 +25,20 @@ O-RU는 **NETCONF/YANG** 기반으로 관리됩니다 (O-RAN WG4 M-plane 사양)
 샘플 설정: `config/oru-config.ini` 의 `[carrier]`, `[array]` 섹션 (실제로는
 YANG 인스턴스 데이터에 해당).
 
+### YANG 인스턴스 데이터 (검증 + JSON export)
+
+`src/mplane/yang.{h,c}`가 설정을 O-RAN YANG 제약으로 검증하고
+`o-ran-uplane-conf` 형태의 JSON 인스턴스 데이터로 내보냅니다.
+
+- `yang_validate_carrier()` — center-freq(FR1 0.41–7.125GHz),
+  bandwidth(5–100MHz), SCS(15/30/60/120kHz), 안테나 수(1–4T/R),
+  duplex(TDD/FDD) 범위를 검사. **`mplane_apply_config()`가 설정 적용
+  전에 이 검증을 호출**하여, NETCONF 서버가 잘못된 edit-config를
+  거부하는 동작을 모사.
+- `yang_carrier_to_json()` — `tx/rx-array-carriers` 트리로 직렬화.
+- CLI: `oru_app --export-yang` 로 검증 후 JSON을 표준출력에 인쇄.
+  샘플 결과는 `config/yang/oru-uplane-conf.sample.json`.
+
 ## S-plane — 동기 평면
 
 O-RU의 모든 타이밍 기준. **IEEE 1588v2 PTP** (+ 옵션 **SyncE**).

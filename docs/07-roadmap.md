@@ -15,9 +15,12 @@
 - [x] U-plane BFP 압축/해제 구현 + round-trip 테스트 (`bfp.c`, `test_bfp`)
 - [x] U-plane 메시지당 다중 섹션 + radio-app 헤더 (`oran_uplane_msg_*`)
 - [x] 프론트홀 타이밍 윈도(T2a/Ta3) 시뮬 스케줄러 (`fh_sched.c`, `test_fh_sched`)
-- [ ] U-plane: modulation compression / µ-law 등 추가 압축 방식
-- [ ] 프론트홀 타이밍 윈도와 실제 RX/TX 경로 통합 (스레드/데드라인 enforcement)
-- [ ] 설정을 YANG 인스턴스(JSON/XML)로 표현, 검증
+- [x] U-plane µ-law 압축 추가 (compMeth=3, `mulaw.c`, `test_mulaw`)
+- [x] 타이밍 윈도 ↔ RX/TX 경로 통합 + 데드라인 enforcement (`datapath.c`)
+- [x] 설정을 YANG 인스턴스(JSON)로 표현 + 검증 (`yang.c`, `--export-yang`)
+- [ ] U-plane: modulation compression (compMeth=4) 등 추가 압축 방식
+- [ ] 프론트홀 RX/TX 실시간 스레드 + 슬롯 타이밍 루프
+- [ ] YANG 인스턴스 입력(파싱) 지원 — 현재는 export(검증/출력)만
 
 ## Phase 2 — 플랫폼 brings-up (HW 필요)
 - [ ] Vivado PL 디자인: JESD204 IP + AXI 매핑
