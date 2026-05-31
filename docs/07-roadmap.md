@@ -11,8 +11,10 @@
 - [x] 문서 1~7
 
 ## Phase 1 — 호스트 기능 심화 (HW 불필요)
-- [ ] O-RAN C-plane Section Type 1/3 완전 인코딩/디코딩
-- [ ] U-plane BFP 압축/해제 구현 + round-trip 테스트
+- [x] O-RAN C-plane Section Type 1/3 인코딩/디코딩 (`oran_cplane*`)
+- [x] U-plane BFP 압축/해제 구현 + round-trip 테스트 (`bfp.c`, `test_bfp`)
+- [ ] C-plane: 메시지당 다중 섹션 + radio-app 헤더 완성
+- [ ] U-plane: modulation compression / µ-law 등 추가 압축 방식
 - [ ] 프론트홀 타이밍 윈도(T2a/Ta3) 모델링 + 시뮬 스케줄러
 - [ ] 설정을 YANG 인스턴스(JSON/XML)로 표현, 검증
 

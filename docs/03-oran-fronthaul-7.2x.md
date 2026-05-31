@@ -39,23 +39,36 @@ O-RAN은 **7.2x**를 표준 채택. O-RU가 **iFFT/FFT, CP 삽입/제거, PRACH,
 DU가 RU에게 "다음 슬롯에 어떤 자원(PRB)에서 송/수신하라"를 알려줍니다.
 
 - **Section Type 1**: 대부분의 DL/UL (most data).
+  - 필드: `frameId, subframeId, slotId, startSymbolId, startPrbc,
+    numPrbc, beamId`.
 - **Section Type 3**: PRACH 및 mixed-numerology.
-- 필드: `frameId, subframeId, slotId, startSymbolId`, 그리고 section 별
-  `startPrbc, numPrbc, reMask, beamId` 등.
+  - Type 1 필드에 더해 **`timeOffset`(섹션 시간 오프셋),
+    `frameStructure`([7:4] FFT 크기 / [3:0] numerology µ), `cpLength`(CP
+    길이), `freqOffset`(부반송파 단위 주파수 오프셋, 부호 있음)** 를
+    추가로 운반합니다. PRACH occasion의 시간/주파수 위치를 지정하는 데
+    필요합니다.
 
-본 저장소 구현: `src/fronthaul/oran_cplane.{h,c}`.
+본 저장소 구현: `src/fronthaul/oran_cplane.c`
+(`oran_cplane_encode/decode` = Type 1, `oran_cplane3_encode/decode` = Type 3).
 
 ## 4. U-plane (사용자 평면 = IQ 데이터)
 
 실제 주파수영역 IQ 샘플 전송.
 
 - 각 PRB(12 subcarrier)의 IQ를 압축하여 전송.
-- **압축 방식**: BFP(Block Floating Point)가 가장 흔함. `udCompHdr`로
-  bit width와 방식을 표기.
+- **압축 방식**(`udCompHdr`의 compMeth):
+  - `ORAN_COMP_NONE` (0): 무압축 16-bit IQ. round-trip 정확.
+  - `ORAN_COMP_BFP` (1): **Block Floating Point** — PRB(24개 값) 단위로
+    공통 지수(exponent) 하나를 공유하고, 가장 큰 크기에 맞춰 우측
+    시프트한 mantissa를 `iqWidth` 비트로 패킹. 블록이 이미 `iqWidth`
+    비트에 들어가면 지수=0이라 무손실, 그렇지 않으면 하위 비트가
+    버려지는 손실 압축(일반적 BFP 트레이드오프).
+  - 예: 9-bit BFP는 PRB당 48바이트(무압축) → 28바이트로 축소.
 - 시간 정렬: C-plane의 section과 U-plane 메시지가 `frame/subframe/slot/symbol`로
   매칭됩니다 (S-plane PTP 시간 기준).
 
-본 저장소 구현: `src/fronthaul/oran_uplane.{h,c}`.
+본 저장소 구현: `src/fronthaul/oran_uplane.c` (+ BFP 코어
+`src/fronthaul/bfp.c`, MSB-first 비트 패커 포함).
 
 ## 5. 타이밍 (매우 중요)
 

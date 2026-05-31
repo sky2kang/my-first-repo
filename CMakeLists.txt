@@ -34,6 +34,7 @@ add_library(oru_core STATIC
     src/fronthaul/ecpri.c
     src/fronthaul/oran_cplane.c
     src/fronthaul/oran_uplane.c
+    src/fronthaul/bfp.c
     src/fronthaul/fronthaul.c
     src/splane/splane.c
     src/mplane/mplane.c
