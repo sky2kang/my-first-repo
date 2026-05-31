@@ -22,6 +22,7 @@
 #include "oru/cu_match.h"
 #include "oru/prach.h"
 #include "oru/beamform.h"
+#include "oru/cfr.h"
 #include "oru/yang.h"
 
 #include <math.h>
@@ -258,6 +259,36 @@ static int run_bf_demo(void)
     return EXIT_SUCCESS;
 }
 
+/*
+ * CFR demo (no radio): synthesise an OFDM-like waveform, measure its PAPR,
+ * apply hard-clip CFR toward a 6 dB target, and show the before/after PAPR
+ * and how many samples were clipped.
+ */
+static int run_cfr_demo(void)
+{
+    enum { N = 1024 };
+    static oru_iq16_t iq[N];
+    for (size_t k = 0; k < N; k++) {
+        double r = 0.0, im = 0.0;
+        for (int t = 1; t <= 8; t++) {
+            r  += cos(2.0 * M_PI * t * k / N + t);
+            im += sin(2.0 * M_PI * t * k / N + t);
+        }
+        iq[k].i = (int16_t)(r * 900.0);
+        iq[k].q = (int16_t)(im * 900.0);
+    }
+
+    cfr_stats_t before, after;
+    cfr_measure(iq, N, &before);
+    int clipped = cfr_clip(iq, N, 6.0);
+    cfr_measure(iq, N, &after);
+
+    printf("cfr demo: PAPR %.2f dB -> %.2f dB (target 6.0), "
+           "clipped %d/%d samples\n",
+           before.papr_db, after.papr_db, clipped, N);
+    return (after.papr_db < before.papr_db) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
 static int opt_flag(int argc, char **argv, const char *flag)
 {
     for (int i = 1; i < argc; i++)
@@ -358,6 +389,8 @@ int main(int argc, char **argv)
         return run_prach_demo();
     if (opt_flag(argc, argv, "--demo-beamform"))
         return run_bf_demo();
+    if (opt_flag(argc, argv, "--demo-cfr"))
+        return run_cfr_demo();
 
 #ifdef HAL_TARGET
     const char *build = "target";

@@ -26,6 +26,7 @@
 - [x] eCPRI+C/U-plane 패킷 조립/파싱 + eAxC seq 추적 (`fh_packet.c`, `--demo-fh`)
 - [x] PRACH preamble(Zadoff-Chu) 생성/검출 시뮬 (`prach.c`, `--demo-prach`)
 - [x] 디지털 빔포밍 가중치 적용(beamId→안테나) 시뮬 (`beamform.c`, `--demo-beamform`)
+- [x] CFR(crest factor reduction) PAPR 저감 시뮬 (`cfr.c`, `--demo-cfr`)
 
 > Phase 1(호스트 기능 심화) 항목 완료. 남은 실시간화(전용 스레드/CPU 핀,
 > 실제 PTP 클럭 연동)와 실제 패킷 I/O는 Phase 2(하드웨어)에서 다룹니다.

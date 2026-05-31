@@ -318,3 +318,31 @@ bf demo:   ant2 weight = (-32767, +0j) Q1.15
 bf demo:   ant3 weight = (+0, -32767j) Q1.15
 bf demo: in[0]=(8000,0) -> ant0=(8000,0) ant1=(0,8000) ant2=(-8000,0) ant3=(0,-8000)
 ```
+
+## 12. CFR (Crest Factor Reduction)
+
+OFDM 파형은 PAPR(peak-to-average power ratio)이 높아, 드문 큰 피크 때문에
+PA(전력증폭기)를 백오프시켜 효율을 떨어뜨립니다. CFR은 PA 직전에 이
+피크를 깎아 평균 전력을 높일 수 있게 합니다. DFE에서 빔포밍 다음에
+위치합니다(... → beamform → CFR → PA).
+
+`src/fronthaul/cfr.c` — 위상 보존 hard clipping:
+
+```
+if |x| > T:  x' = x * (T / |x|)     else x' = x
+```
+
+- `cfr_measure(iq, n, out)` — peak/avg power와 PAPR(dB) 측정.
+- `cfr_clip(iq, n, target_papr_db)` — RMS 기준 target PAPR에 해당하는
+  임계값 T로 클리핑(위상 유지), 클리핑된 샘플 수 반환.
+
+> 클리핑은 in-band 왜곡(EVM)과 out-of-band 방사를 유발하므로, 실제 CFR은
+> 뒤에 peak windowing/filtering을 둡니다(TODO). 하드 클리핑이 평균도
+> 약간 낮추므로 결과 PAPR은 목표보다 조금 높게 수렴합니다.
+
+CLI `oru_app --demo-cfr`:
+
+```
+$ oru_app --demo-cfr
+cfr demo: PAPR 9.03 dB -> 7.45 dB (target 6.0), clipped 115/1024 samples
+```
