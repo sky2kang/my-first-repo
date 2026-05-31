@@ -1,0 +1,35 @@
+# Build output
+build/
+out/
+*.o
+*.a
+*.so
+*.elf
+*.bin
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Xilinx / Vitis / PetaLinux generated
+*.xsa
+*.bit
+*.pdi
+*.bif
+images/
+components/
+tmp-*/
+.Xil/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Logs
+*.log
