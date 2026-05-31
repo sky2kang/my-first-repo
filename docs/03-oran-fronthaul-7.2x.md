@@ -346,3 +346,35 @@ CLI `oru_app --demo-cfr`:
 $ oru_app --demo-cfr
 cfr demo: PAPR 9.03 dB -> 7.45 dB (target 6.0), clipped 115/1024 samples
 ```
+
+## 13. DPD (Digital Pre-Distortion)
+
+PA는 포화 근처에서 효율이 높지만 비선형(큰 진폭을 압축 = AM/AM, 위상
+회전 = AM/PM)이라 in-band 왜곡(EVM)과 out-of-band 방사(ACLR)를
+만듭니다. DPD는 PA의 **역특성**을 미리 적용해 cascade(DPD→PA)를
+선형화합니다. DFE에서 CFR 다음에 위치하며(... → CFR → DPD → PA),
+ADRV9025의 **관측 수신기(ORX)** 가 캡처한 PA 출력으로부터 적응합니다.
+
+`src/fronthaul/dpd.c` — 메모리리스 홀수차 다항식 모델(차수 1,3,5):
+
+```
+G(r) = c1 + c3·(r/FS)^2 + c5·(r/FS)^4     (복소 계수)
+y = x · G(|x|)
+```
+
+- `dpd_pa_model()` — PA를 모델링(시뮬/테스트용 비선형 출력 생성).
+- `dpd_apply()` — DPD 계수로 pre-distortion 적용.
+- `dpd_adapt()` — **indirect learning**(LMS)으로 입력 x와 관측된 PA
+  출력 y로부터 DPD 계수를 갱신. `G(y)≈x`가 되도록 학습 → 메모리리스
+  DPD에서는 post-inverse = pre-inverse.
+
+CLI `oru_app --demo-dpd` (압축형 PA에 200회 적응):
+
+```
+$ oru_app --demo-dpd
+dpd demo: PA EVM 3.01% -> with DPD 1.61% (coeffs c1=1.001 c3=0.139 c5=0.019)
+```
+
+PA의 c3=-0.30(압축)에 대해 DPD가 c3=+0.139(사전 확장)를 학습해 보상하는
+것을 볼 수 있습니다. 실제 DPD는 메모리 효과(GMP/Volterra)와 더 높은
+차수를 다루지만, 여기서는 핵심 적응 루프를 호스트에서 검증합니다.

@@ -23,6 +23,7 @@
 #include "oru/prach.h"
 #include "oru/beamform.h"
 #include "oru/cfr.h"
+#include "oru/dpd.h"
 #include "oru/yang.h"
 
 #include <math.h>
@@ -289,6 +290,50 @@ static int run_cfr_demo(void)
     return (after.papr_db < before.papr_db) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+/*
+ * DPD demo (no radio): model a compressive PA, train a pre-distorter by
+ * indirect learning, and show the EVM (distortion vs the linear reference)
+ * before and after DPD.
+ */
+static int run_dpd_demo(void)
+{
+    enum { N = 512 };
+    static oru_iq16_t x[N], pd[N], y[N];
+    for (size_t k = 0; k < N; k++) {
+        double r = 0.0, im = 0.0;
+        for (int t = 1; t <= 4; t++) {
+            r  += cos(2.0 * M_PI * t * k / N + t);
+            im += sin(2.0 * M_PI * t * k / N + t);
+        }
+        x[k].i = (int16_t)(r * 3000.0);
+        x[k].q = (int16_t)(im * 3000.0);
+    }
+
+    /* compressive PA model */
+    dpd_coeffs_t pa;
+    dpd_init(&pa);
+    pa.re[0] = 1.0; pa.re[1] = -0.30; pa.re[2] = 0.05; pa.im[1] = 0.05;
+
+    dpd_pa_model(&pa, x, y, N);
+    double evm_before = dpd_rms_error_pct(x, y, N);
+
+    dpd_coeffs_t dpd;
+    dpd_init(&dpd);
+    for (int it = 0; it < 200; it++) {
+        dpd_apply(&dpd, x, pd, N);
+        dpd_pa_model(&pa, pd, y, N);
+        dpd_adapt(&dpd, x, y, N, 0.5);
+    }
+    dpd_apply(&dpd, x, pd, N);
+    dpd_pa_model(&pa, pd, y, N);
+    double evm_after = dpd_rms_error_pct(x, y, N);
+
+    printf("dpd demo: PA EVM %.2f%% -> with DPD %.2f%% "
+           "(coeffs c1=%.3f c3=%.3f c5=%.3f)\n",
+           evm_before, evm_after, dpd.re[0], dpd.re[1], dpd.re[2]);
+    return (evm_after < evm_before) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
 static int opt_flag(int argc, char **argv, const char *flag)
 {
     for (int i = 1; i < argc; i++)
@@ -391,6 +436,8 @@ int main(int argc, char **argv)
         return run_bf_demo();
     if (opt_flag(argc, argv, "--demo-cfr"))
         return run_cfr_demo();
+    if (opt_flag(argc, argv, "--demo-dpd"))
+        return run_dpd_demo();
 
 #ifdef HAL_TARGET
     const char *build = "target";

@@ -46,6 +46,7 @@ add_library(oru_core STATIC
     src/fronthaul/prach.c
     src/fronthaul/beamform.c
     src/fronthaul/cfr.c
+    src/fronthaul/dpd.c
     src/fronthaul/fronthaul.c
     src/splane/splane.c
     src/mplane/mplane.c

@@ -57,3 +57,7 @@ add_test(NAME beamform COMMAND test_beamform)
 add_executable(test_cfr test_cfr.c)
 target_link_libraries(test_cfr PRIVATE oru_core)
 add_test(NAME cfr COMMAND test_cfr)
+
+add_executable(test_dpd test_dpd.c)
+target_link_libraries(test_dpd PRIVATE oru_core)
+add_test(NAME dpd COMMAND test_dpd)
