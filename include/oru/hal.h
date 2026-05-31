@@ -4,7 +4,7 @@
  *
  * Upper layers (fronthaul / app) only ever talk to this interface. The
  * implementation is selected at build time:
- *   - HAL_SIM    (host build)   -> src/hal/adrv9025/*  with simulated HW
+ *   - HAL_SIM    (host build)   -> src/hal/adrv9025 with simulated HW
  *   - HAL_TARGET (Zynq build)   -> real ADI API / UIO / devmem access
  */
 #ifndef ORU_HAL_H
