@@ -41,3 +41,7 @@ add_test(NAME cu_match COMMAND test_cu_match)
 add_executable(test_comp_bench test_comp_bench.c)
 target_link_libraries(test_comp_bench PRIVATE oru_core)
 add_test(NAME comp_bench COMMAND test_comp_bench)
+
+add_executable(test_fh_packet test_fh_packet.c)
+target_link_libraries(test_fh_packet PRIVATE oru_core)
+add_test(NAME fh_packet COMMAND test_fh_packet)

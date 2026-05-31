@@ -229,3 +229,34 @@ modcomp-16qam        1536      288   5.33   1266.3
 
 압축률이 높을수록 오차가 커지는 트레이드오프를 하드웨어 없이 비교해
 적절한 `iqWidth`/방식을 고를 수 있습니다(값은 합성 정현파 신호 기준).
+
+## 9. 패킷 조립/파싱 계층 (eCPRI + C/U-plane)
+
+`src/fronthaul/fh_packet.c`는 eCPRI 공통 헤더(`oru/ecpri.h`)와 C/U-plane
+페이로드(`oru/fronthaul.h`)를 묶어 **완전한 프론트홀 패킷 한 장**을
+만들고 다시 파싱하는 최상위 계층입니다.
+
+```
++------------------+-------------------------------------------+
+| eCPRI header (8) | payload: C-plane section  OR  U-plane msg |
++------------------+-------------------------------------------+
+```
+
+- **송신(`fh_tx_t`)**: eAxC(pc_id)별 `seq_id`를 자동 증가시키며
+  `fh_build_cplane_s1/s3()`, `fh_build_uplane()`로 패킷을 생성.
+- **수신(`fh_rx_t`)**: `fh_parse_cplane()` / `fh_parse_uplane()`이
+  eCPRI를 디코드하고 메시지 타입을 검증한 뒤, eAxC별 기대 `seq_id`와
+  대조하여 **손실/재정렬(seq_gaps)** 을 카운트.
+- eAxC 흐름마다 시퀀스 카운터가 독립적이며, C-plane은 페이로드 길이로
+  Section Type 1(12B)/3(20B)을 구분.
+
+CLI `oru_app --demo-fh`가 DU→O-RU 전체 경로(C-plane grant 빌드 →
+U-plane 빌드 → 파싱 → `cu_match` 정합)를 시연합니다:
+
+```
+$ oru_app --demo-fh
+fh demo: built C-plane (20 B) and U-plane (136 B) on eAxC 0x0001
+fh demo: parsed C-plane/S1 seq=0 -> grant slot=0 PRB[0..4)
+fh demo: parsed U-plane seq=1 -> match=OK grant_complete=yes
+fh demo: rx pkts_ok=2 seq_gaps=0
+```

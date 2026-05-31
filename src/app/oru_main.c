@@ -18,6 +18,8 @@
 #include "oru/datapath.h"
 #include "oru/slot_loop.h"
 #include "oru/comp_bench.h"
+#include "oru/fh_packet.h"
+#include "oru/cu_match.h"
 #include "oru/yang.h"
 
 #include <math.h>
@@ -89,6 +91,92 @@ static int run_comp_benchmark(void)
                cases[i].name, r.raw_bytes, r.comp_bytes, r.ratio, r.rmse);
     }
     return EXIT_SUCCESS;
+}
+
+/*
+ * End-to-end fronthaul packet demo (no radio): a DU side builds a C-plane
+ * grant packet and a matching U-plane packet over eCPRI; the O-RU side
+ * parses both, registers the grant, and matches the U-plane against it.
+ * Exercises ecpri + C/U-plane + sequence tracking + cu_match together.
+ */
+static int run_fh_demo(void)
+{
+    const uint16_t eaxc = 0x0001;
+    fh_tx_t tx; fh_tx_init(&tx);
+    fh_rx_t rx; fh_rx_init(&rx);
+    cu_matcher_t m; cu_match_init(&m);
+
+    /* DU: C-plane grant for frame 1, slot 0, sym 0, PRBs [0,4). */
+    oran_cplane_section_t grant = {
+        .frame_id = 1, .slot_id = 0, .start_symbol_id = 0,
+        .start_prb = 0, .num_prb = 4, .beam_id = 1,
+    };
+    uint8_t cpkt[256];
+    int cn = fh_build_cplane_s1(&tx, eaxc, &grant, cpkt, sizeof(cpkt));
+
+    /* DU: U-plane carrying IQ for those 4 PRBs (BFP-9). */
+    oru_iq16_t iq[4 * 12];
+    for (size_t k = 0; k < sizeof(iq) / sizeof(iq[0]); k++) {
+        iq[k].i = (int16_t)(100 + k);
+        iq[k].q = (int16_t)(100 - (int)k);
+    }
+    oran_radio_app_hdr_t app = {
+        .data_direction = 1, .payload_version = 1,
+        .frame_id = 1, .slot_id = 0, .start_symbol_id = 0,
+    };
+    oran_uplane_section_t sec = {
+        .hdr = { .section_id = 1, .start_prb = 0, .num_prb = 4,
+                 .comp_meth = ORAN_COMP_BFP, .iq_bitwidth = 9 },
+        .iq = iq, .n_samples = sizeof(iq) / sizeof(iq[0]),
+    };
+    uint8_t upkt[2048];
+    int un = fh_build_uplane(&tx, eaxc, &app, &sec, 1, upkt, sizeof(upkt));
+
+    if (cn < 0 || un < 0) {
+        printf("fh demo: build failed\n");
+        return EXIT_FAILURE;
+    }
+    printf("fh demo: built C-plane (%d B) and U-plane (%d B) on eAxC 0x%04x\n",
+           cn, un, eaxc);
+
+    /* O-RU: parse the C-plane grant and register it. */
+    fh_pkt_t cp;
+    if (fh_parse_cplane(&rx, cpkt, (size_t)cn, &cp) != ORU_OK) {
+        printf("fh demo: C-plane parse failed\n");
+        return EXIT_FAILURE;
+    }
+    cu_match_add_section1(&m, &cp.cplane.s1);
+    printf("fh demo: parsed %s seq=%u -> grant slot=%u PRB[%u..%u)\n",
+           fh_pkt_kind_str(cp.kind), cp.ecpri.seq_id, cp.cplane.s1.slot_id,
+           cp.cplane.s1.start_prb,
+           cp.cplane.s1.start_prb + cp.cplane.s1.num_prb);
+
+    /* O-RU: parse the U-plane and match it against outstanding grants. */
+    fh_pkt_t upk;
+    oran_uplane_msg_t msg;
+    oru_iq16_t out[4 * 12];
+    if (fh_parse_uplane(&rx, upkt, (size_t)un, &upk, &msg, out,
+                        sizeof(out) / sizeof(out[0])) != ORU_OK) {
+        printf("fh demo: U-plane parse failed\n");
+        return EXIT_FAILURE;
+    }
+    oran_uplane_hdr_t uh = {
+        .frame_id = msg.app.frame_id, .subframe_id = msg.app.subframe_id,
+        .slot_id = msg.app.slot_id, .symbol_id = msg.app.start_symbol_id,
+        .start_prb = msg.sec_hdrs[0].start_prb,
+        .num_prb = msg.sec_hdrs[0].num_prb,
+    };
+    cu_match_result_t r = cu_match_check(&m, &uh);
+    bool complete = cu_match_grant_complete(&m, uh.frame_id, uh.subframe_id,
+                                            uh.slot_id, uh.symbol_id);
+    printf("fh demo: parsed %s seq=%u -> match=%s grant_complete=%s\n",
+           fh_pkt_kind_str(upk.kind), upk.ecpri.seq_id,
+           cu_match_result_str(r), complete ? "yes" : "no");
+    printf("fh demo: rx pkts_ok=%llu seq_gaps=%llu\n",
+           (unsigned long long)rx.pkts_ok,
+           (unsigned long long)rx.seq_gaps);
+
+    return (r == CU_MATCH_OK && complete) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 static int opt_flag(int argc, char **argv, const char *flag)
@@ -185,6 +273,8 @@ int main(int argc, char **argv)
     /* Offline tools that need no config/radio. */
     if (opt_flag(argc, argv, "--bench-compression"))
         return run_comp_benchmark();
+    if (opt_flag(argc, argv, "--demo-fh"))
+        return run_fh_demo();
 
 #ifdef HAL_TARGET
     const char *build = "target";
