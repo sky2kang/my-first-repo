@@ -13,9 +13,10 @@
 ## Phase 1 — 호스트 기능 심화 (HW 불필요)
 - [x] O-RAN C-plane Section Type 1/3 인코딩/디코딩 (`oran_cplane*`)
 - [x] U-plane BFP 압축/해제 구현 + round-trip 테스트 (`bfp.c`, `test_bfp`)
-- [ ] C-plane: 메시지당 다중 섹션 + radio-app 헤더 완성
+- [x] U-plane 메시지당 다중 섹션 + radio-app 헤더 (`oran_uplane_msg_*`)
+- [x] 프론트홀 타이밍 윈도(T2a/Ta3) 시뮬 스케줄러 (`fh_sched.c`, `test_fh_sched`)
 - [ ] U-plane: modulation compression / µ-law 등 추가 압축 방식
-- [ ] 프론트홀 타이밍 윈도(T2a/Ta3) 모델링 + 시뮬 스케줄러
+- [ ] 프론트홀 타이밍 윈도와 실제 RX/TX 경로 통합 (스레드/데드라인 enforcement)
 - [ ] 설정을 YANG 인스턴스(JSON/XML)로 표현, 검증
 
 ## Phase 2 — 플랫폼 brings-up (HW 필요)

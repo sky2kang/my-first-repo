@@ -14,6 +14,7 @@
 #include "oru/splane.h"
 #include "oru/mplane.h"
 #include "oru/fronthaul.h"
+#include "oru/fh_sched.h"
 
 #include <signal.h>
 #include <string.h>
@@ -43,6 +44,46 @@ static const char *opt_value(int argc, char **argv, const char *flag,
         if (strcmp(argv[i], flag) == 0)
             return argv[i + 1];
     return def;
+}
+
+/*
+ * Demonstrate the fronthaul timing-window scheduler. In a real O-RU the
+ * RX threads would call fh_sched_classify() for every fronthaul packet
+ * against the PTP slot boundary; here we feed it a few synthetic DL
+ * arrivals to show on-time / early / late classification and counters.
+ */
+static void demo_fh_scheduler(const oru_config_t *cfg, uint32_t scs_hz)
+{
+    fh_sched_cfg_t scfg = {
+        .t2a_min_ns = (uint32_t)oru_config_get_int(cfg, "fronthaul.t2a_min_ns", 100000),
+        .t2a_max_ns = (uint32_t)oru_config_get_int(cfg, "fronthaul.t2a_max_ns", 300000),
+        .ta3_min_ns = (uint32_t)oru_config_get_int(cfg, "fronthaul.ta3_min_ns", 50000),
+        .ta3_max_ns = (uint32_t)oru_config_get_int(cfg, "fronthaul.ta3_max_ns", 200000),
+    };
+
+    fh_sched_t sched;
+    if (fh_sched_init(&sched, &scfg, scs_hz) != ORU_OK)
+        return;
+
+    const uint64_t t0 = 0;
+    uint64_t boundary = fh_sched_slot_boundary(&sched, t0, 1);
+    /* arrivals relative to boundary: too early, on-time, on-time, too late */
+    const uint64_t arrivals[] = {
+        boundary - scfg.t2a_max_ns - 1,   /* EARLY   */
+        boundary - scfg.t2a_max_ns,       /* ON_TIME */
+        boundary - scfg.t2a_min_ns,       /* ON_TIME */
+        boundary - scfg.t2a_min_ns + 1,   /* LATE    */
+    };
+    for (size_t i = 0; i < sizeof(arrivals) / sizeof(arrivals[0]); i++) {
+        fh_window_result_t r = fh_sched_classify(&sched, FH_DL, boundary,
+                                                 arrivals[i]);
+        LOGI(TAG, "fh demo: DL arrival[%zu] -> %s", i,
+             fh_window_result_str(r));
+    }
+    LOGI(TAG, "fh demo: DL stats on_time=%llu early=%llu late=%llu",
+         (unsigned long long)sched.stats.dl_on_time,
+         (unsigned long long)sched.stats.dl_early,
+         (unsigned long long)sched.stats.dl_late);
 }
 
 int main(int argc, char **argv)
@@ -120,6 +161,8 @@ int main(int argc, char **argv)
     LOGI(TAG, "O-RU is on the air: %s %llu Hz, %u MHz, %uT%uR",
          carrier.band, (unsigned long long)carrier.center_freq_hz,
          carrier.bandwidth_hz / 1000000u, carrier.num_tx, carrier.num_rx);
+
+    demo_fh_scheduler(cfg, carrier.scs_hz);
 
     /* Main service loop. The real datapath runs in fronthaul RX threads;
      * here we just keep the process alive and watch for loss of sync. */

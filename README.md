@@ -67,7 +67,7 @@ O-RU(Radio Unit)는 5G 기지국(gNB)을 O-RAN 표준으로 분할(disaggregatio
 ├── src/
 │   ├── common/              # 로깅, 설정 로더, 공통 타입
 │   ├── hal/adrv9025/        # ADRV9025 RF 드라이버 + JESD204
-│   ├── fronthaul/           # eCPRI + O-RAN C/U-plane
+│   ├── fronthaul/           # eCPRI + O-RAN C/U-plane, BFP, 타이밍 스케줄러
 │   ├── mplane/              # 관리 평면 (NETCONF/YANG)
 │   ├── splane/              # 동기 평면 (PTP)
 │   └── app/                 # O-RU 메인 애플리케이션 (오케스트레이터)

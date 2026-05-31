@@ -45,6 +45,55 @@ static size_t payload_bytes(uint8_t comp_meth, uint16_t num_prb,
     return n * 2u * sizeof(int16_t);   /* ORAN_COMP_NONE */
 }
 
+/* Pack `num_prb` PRBs of IQ into `dst` per comp_meth. Returns bytes used
+ * or a negative oru_status_t. Shared by the single- and multi-section
+ * encoders. */
+static int pack_iq(uint8_t comp_meth, uint8_t iq_width, uint16_t num_prb,
+                   const oru_iq16_t *iq, uint8_t *dst, size_t dst_len)
+{
+    size_t need = payload_bytes(comp_meth, num_prb, iq_width);
+    if (dst_len < need)
+        return ORU_ERR_PARAM;
+
+    if (comp_meth == ORAN_COMP_BFP)
+        return bfp_compress(iq, num_prb, iq_width, dst, dst_len);
+
+    size_t n = (size_t)num_prb * RE_PER_PRB;
+    uint8_t *p = dst;
+    for (size_t k = 0; k < n; k++) {
+        *p++ = (uint8_t)(iq[k].i >> 8);
+        *p++ = (uint8_t)(iq[k].i & 0xff);
+        *p++ = (uint8_t)(iq[k].q >> 8);
+        *p++ = (uint8_t)(iq[k].q & 0xff);
+    }
+    return (int)need;
+}
+
+/* Inverse of pack_iq(). Returns complex sample count or negative status. */
+static int unpack_iq(uint8_t comp_meth, uint8_t iq_width, uint16_t num_prb,
+                     const uint8_t *src, size_t src_len,
+                     oru_iq16_t *iq, size_t max_samples)
+{
+    size_t n = (size_t)num_prb * RE_PER_PRB;
+    size_t need = payload_bytes(comp_meth, num_prb, iq_width);
+    if (src_len < need)
+        return ORU_ERR_PROTO;
+    if (n > max_samples)
+        return ORU_ERR_PARAM;
+
+    if (comp_meth == ORAN_COMP_BFP)
+        return bfp_decompress(src, src_len, num_prb, iq_width, iq,
+                              max_samples);
+
+    const uint8_t *p = src;
+    for (size_t k = 0; k < n; k++) {
+        iq[k].i = (int16_t)((p[0] << 8) | p[1]);
+        iq[k].q = (int16_t)((p[2] << 8) | p[3]);
+        p += 4;
+    }
+    return (int)n;
+}
+
 int oran_uplane_encode(const oran_uplane_hdr_t *h, const oru_iq16_t *iq,
                        size_t n_samples, uint8_t *buf, size_t len)
 {
@@ -76,20 +125,10 @@ int oran_uplane_encode(const oran_uplane_hdr_t *h, const oru_iq16_t *iq,
     buf[8] = (uint8_t)(((h->comp_meth & 0x0f) << 4) | width_to_wire(width));
     buf[9] = 0;
 
-    uint8_t *p = buf + UPLANE_HDR_SIZE;
-
-    if (h->comp_meth == ORAN_COMP_BFP) {
-        int rc = bfp_compress(iq, h->num_prb, width, p, need - UPLANE_HDR_SIZE);
-        if (rc < 0)
-            return rc;
-    } else {
-        for (size_t k = 0; k < expect; k++) {
-            *p++ = (uint8_t)(iq[k].i >> 8);
-            *p++ = (uint8_t)(iq[k].i & 0xff);
-            *p++ = (uint8_t)(iq[k].q >> 8);
-            *p++ = (uint8_t)(iq[k].q & 0xff);
-        }
-    }
+    int rc = pack_iq(h->comp_meth, width, h->num_prb, iq,
+                     buf + UPLANE_HDR_SIZE, len - UPLANE_HDR_SIZE);
+    if (rc < 0)
+        return rc;
     return (int)need;
 }
 
@@ -126,20 +165,165 @@ oru_status_t oran_uplane_decode(const uint8_t *buf, size_t len,
     if (n > max_samples)
         return ORU_ERR_PARAM;
 
-    const uint8_t *p = buf + UPLANE_HDR_SIZE;
+    int rc = unpack_iq(out_hdr->comp_meth, out_hdr->iq_bitwidth,
+                       out_hdr->num_prb, buf + UPLANE_HDR_SIZE,
+                       len - UPLANE_HDR_SIZE, iq, max_samples);
+    if (rc < 0)
+        return (oru_status_t)rc;
+    *out_n = n;
+    return ORU_OK;
+}
 
-    if (out_hdr->comp_meth == ORAN_COMP_BFP) {
-        int rc = bfp_decompress(p, len - UPLANE_HDR_SIZE, out_hdr->num_prb,
-                                out_hdr->iq_bitwidth, iq, max_samples);
+/* --- Multi-section message (radio-app header + N sections) --------------- */
+
+/* The real O-RAN radio-app header bit-packs frame/subframe/slot/symbol
+ * tightly. To stay unambiguous and teaching-friendly we use a flat layout.
+ *
+ * Radio-application header (8 bytes):
+ *   0: [7] dataDirection | [6:4] payloadVersion | [3:0] filterIndex
+ *   1: frameId
+ *   2: subframeId
+ *   3: slotId
+ *   4: startSymbolId
+ *   5: numberOfSections
+ *   6: reserved
+ *   7: reserved
+ * Per-section header (8 bytes):
+ *   0-1: sectionId
+ *   2-3: startPrbu
+ *   4-5: numPrbu
+ *   6:   udCompHdr -> [7:4] compMeth, [3:0] iqWidth (0 means 16)
+ *   7:   reserved
+ * ... followed immediately by that section's IQ payload.
+ */
+#define RADIO_APP_HDR_SIZE 8u
+#define USEC_HDR_SIZE      8u
+
+static int comp_meth_ok(uint8_t m)
+{
+    return m == ORAN_COMP_NONE || m == ORAN_COMP_BFP;
+}
+
+int oran_uplane_msg_encode(const oran_radio_app_hdr_t *app,
+                           const oran_uplane_section_t *sections,
+                           size_t n_sections,
+                           uint8_t *buf, size_t len)
+{
+    if (!app || !sections || !buf)
+        return ORU_ERR_PARAM;
+    if (n_sections == 0 || n_sections > ORAN_MAX_SECTIONS)
+        return ORU_ERR_PARAM;
+    if (len < RADIO_APP_HDR_SIZE)
+        return ORU_ERR_PARAM;
+
+    buf[0] = (uint8_t)(((app->data_direction & 0x01) << 7) |
+                       ((app->payload_version & 0x07) << 4) |
+                       (app->filter_index & 0x0f));
+    buf[1] = app->frame_id;
+    buf[2] = app->subframe_id;
+    buf[3] = app->slot_id;
+    buf[4] = app->start_symbol_id;
+    buf[5] = (uint8_t)n_sections;
+    buf[6] = 0;
+    buf[7] = 0;
+
+    size_t off = RADIO_APP_HDR_SIZE;
+    for (size_t s = 0; s < n_sections; s++) {
+        const oran_uplane_section_t *sec = &sections[s];
+        if (!comp_meth_ok(sec->hdr.comp_meth))
+            return ORU_ERR_NOTSUP;
+        if (!sec->iq)
+            return ORU_ERR_PARAM;
+        size_t expect = (size_t)sec->hdr.num_prb * RE_PER_PRB;
+        if (sec->n_samples < expect)
+            return ORU_ERR_PARAM;
+
+        uint8_t width = (sec->hdr.comp_meth == ORAN_COMP_BFP)
+                            ? sec->hdr.iq_bitwidth : 16u;
+        size_t pay = payload_bytes(sec->hdr.comp_meth, sec->hdr.num_prb,
+                                   width);
+        if (off + USEC_HDR_SIZE + pay > len)
+            return ORU_ERR_PARAM;
+
+        uint8_t *h = buf + off;
+        h[0] = (uint8_t)(sec->hdr.section_id >> 8);
+        h[1] = (uint8_t)(sec->hdr.section_id & 0xff);
+        h[2] = (uint8_t)(sec->hdr.start_prb >> 8);
+        h[3] = (uint8_t)(sec->hdr.start_prb & 0xff);
+        h[4] = (uint8_t)(sec->hdr.num_prb >> 8);
+        h[5] = (uint8_t)(sec->hdr.num_prb & 0xff);
+        h[6] = (uint8_t)(((sec->hdr.comp_meth & 0x0f) << 4) |
+                         width_to_wire(width));
+        h[7] = 0;
+        off += USEC_HDR_SIZE;
+
+        int rc = pack_iq(sec->hdr.comp_meth, width, sec->hdr.num_prb,
+                         sec->iq, buf + off, len - off);
+        if (rc < 0)
+            return rc;
+        off += (size_t)rc;
+    }
+
+    LOGT(TAG, "encoded U-plane msg: %zu sections, %zu bytes", n_sections, off);
+    return (int)off;
+}
+
+oru_status_t oran_uplane_msg_decode(const uint8_t *buf, size_t len,
+                                    oran_uplane_msg_t *out,
+                                    oru_iq16_t *iq, size_t max_samples)
+{
+    if (!buf || !out || !iq)
+        return ORU_ERR_PARAM;
+    if (len < RADIO_APP_HDR_SIZE)
+        return ORU_ERR_PROTO;
+
+    memset(out, 0, sizeof(*out));
+    out->app.data_direction  = (uint8_t)((buf[0] >> 7) & 0x01);
+    out->app.payload_version = (uint8_t)((buf[0] >> 4) & 0x07);
+    out->app.filter_index    = (uint8_t)(buf[0] & 0x0f);
+    out->app.frame_id        = buf[1];
+    out->app.subframe_id     = buf[2];
+    out->app.slot_id         = buf[3];
+    out->app.start_symbol_id = buf[4];
+
+    size_t n_sections = buf[5];
+    if (n_sections == 0 || n_sections > ORAN_MAX_SECTIONS)
+        return ORU_ERR_PROTO;
+
+    size_t off = RADIO_APP_HDR_SIZE;
+    size_t total_samples = 0;
+
+    for (size_t s = 0; s < n_sections; s++) {
+        if (off + USEC_HDR_SIZE > len)
+            return ORU_ERR_PROTO;
+
+        const uint8_t *h = buf + off;
+        oran_uplane_section_hdr_t *sh = &out->sec_hdrs[s];
+        sh->section_id  = (uint16_t)((h[0] << 8) | h[1]);
+        sh->start_prb   = (uint16_t)((h[2] << 8) | h[3]);
+        sh->num_prb     = (uint16_t)((h[4] << 8) | h[5]);
+        sh->comp_meth   = (uint8_t)((h[6] >> 4) & 0x0f);
+        sh->iq_bitwidth = width_from_wire((uint8_t)(h[6] & 0x0f));
+        if (!comp_meth_ok(sh->comp_meth))
+            return ORU_ERR_NOTSUP;
+        off += USEC_HDR_SIZE;
+
+        size_t n = (size_t)sh->num_prb * RE_PER_PRB;
+        if (total_samples + n > max_samples)
+            return ORU_ERR_PARAM;
+
+        int rc = unpack_iq(sh->comp_meth, sh->iq_bitwidth, sh->num_prb,
+                           buf + off, len - off,
+                           iq + total_samples, max_samples - total_samples);
         if (rc < 0)
             return (oru_status_t)rc;
-    } else {
-        for (size_t k = 0; k < n; k++) {
-            iq[k].i = (int16_t)((p[0] << 8) | p[1]);
-            iq[k].q = (int16_t)((p[2] << 8) | p[3]);
-            p += 4;
-        }
+
+        out->sec_offsets[s] = total_samples;
+        total_samples += n;
+        off += payload_bytes(sh->comp_meth, sh->num_prb, sh->iq_bitwidth);
     }
-    *out_n = n;
+
+    out->n_sections = n_sections;
+    out->n_samples  = total_samples;
     return ORU_OK;
 }

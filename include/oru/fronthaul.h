@@ -60,6 +60,38 @@ typedef struct {
     uint8_t   iq_bitwidth;      /* udCompHdr bit width (e.g. 9 for BFP)   */
 } oran_uplane_hdr_t;
 
+/* --- Radio-application header ---
+ * Common to every section carried in one fronthaul eCPRI message
+ * (after the eCPRI common header). */
+typedef struct {
+    uint8_t data_direction;  /* 0 = UL (RX from antenna), 1 = DL (TX)     */
+    uint8_t payload_version; /* payloadVersion (1)                        */
+    uint8_t filter_index;    /* frequency-domain filter index             */
+    uint8_t frame_id;
+    uint8_t subframe_id;
+    uint8_t slot_id;
+    uint8_t start_symbol_id;
+} oran_radio_app_hdr_t;
+
+/* --- Per-section header for a U-plane section within a message --- */
+typedef struct {
+    uint16_t section_id;
+    uint16_t start_prb;   /* startPrbu */
+    uint16_t num_prb;     /* numPrbu   */
+    uint8_t  comp_meth;   /* oran_comp_meth_t */
+    uint8_t  iq_bitwidth;
+} oran_uplane_section_hdr_t;
+
+/* One section plus the IQ samples it carries (for encoding). */
+typedef struct {
+    oran_uplane_section_hdr_t hdr;
+    const oru_iq16_t *iq;
+    size_t            n_samples;  /* must equal hdr.num_prb * 12 */
+} oran_uplane_section_t;
+
+/* Maximum sections we will accept in a single message (parse guard). */
+#define ORAN_MAX_SECTIONS 64u
+
 /* Fronthaul subsystem lifecycle. */
 oru_status_t fronthaul_init(void);
 void         fronthaul_shutdown(void);
@@ -88,5 +120,33 @@ oru_status_t oran_uplane_decode(const uint8_t *buf, size_t len,
                                 oran_uplane_hdr_t *out_hdr,
                                 oru_iq16_t *iq, size_t max_samples,
                                 size_t *out_n);
+
+/* --- U-plane: full message with a radio-app header + multiple sections ---
+ *
+ * Encode one fronthaul message: a single radio-application header followed
+ * by `n_sections` U-plane sections, each with its own PRB range and
+ * compression. Returns total bytes written, or a negative oru_status_t. */
+int oran_uplane_msg_encode(const oran_radio_app_hdr_t *app,
+                           const oran_uplane_section_t *sections,
+                           size_t n_sections,
+                           uint8_t *buf, size_t len);
+
+/*
+ * Decode a multi-section U-plane message. Fills `app`, the per-section
+ * headers `sec_hdrs[]`, and concatenates all sections' IQ into `iq`
+ * (section i starts at offset sec_offsets[i]). Caller supplies the array
+ * capacities. Returns ORU_OK and sets *out_n_sections / *out_n_samples.
+ */
+typedef struct {
+    oran_radio_app_hdr_t      app;
+    oran_uplane_section_hdr_t sec_hdrs[ORAN_MAX_SECTIONS];
+    size_t                    sec_offsets[ORAN_MAX_SECTIONS]; /* into iq[] */
+    size_t                    n_sections;
+    size_t                    n_samples;       /* total across sections   */
+} oran_uplane_msg_t;
+
+oru_status_t oran_uplane_msg_decode(const uint8_t *buf, size_t len,
+                                    oran_uplane_msg_t *out,
+                                    oru_iq16_t *iq, size_t max_samples);
 
 #endif /* ORU_FRONTHAUL_H */

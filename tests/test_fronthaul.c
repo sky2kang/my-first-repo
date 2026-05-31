@@ -114,11 +114,73 @@ static void test_uplane(void)
     uplane_roundtrip(ORAN_COMP_BFP, 8, 100, 1);
 }
 
+/* Multi-section U-plane message: 3 sections with mixed compression. */
+static void test_uplane_msg(void)
+{
+    enum { S0 = 2, S1 = 1, S2 = 3 };  /* PRB counts per section */
+    oru_iq16_t iq0[S0 * 12], iq1[S1 * 12], iq2[S2 * 12];
+    for (int k = 0; k < S0 * 12; k++) { iq0[k].i = (int16_t)(k);     iq0[k].q = (int16_t)(-k); }
+    for (int k = 0; k < S1 * 12; k++) { iq1[k].i = (int16_t)(k + 5); iq1[k].q = (int16_t)(k - 5); }
+    for (int k = 0; k < S2 * 12; k++) { iq2[k].i = (int16_t)(50 - k); iq2[k].q = (int16_t)(k); }
+
+    oran_radio_app_hdr_t app = {
+        .data_direction = 1, .payload_version = 1, .filter_index = 0,
+        .frame_id = 12, .subframe_id = 4, .slot_id = 1, .start_symbol_id = 0,
+    };
+    oran_uplane_section_t secs[3] = {
+        { .hdr = { .section_id = 100, .start_prb = 0,  .num_prb = S0,
+                   .comp_meth = ORAN_COMP_NONE, .iq_bitwidth = 16 },
+          .iq = iq0, .n_samples = S0 * 12 },
+        { .hdr = { .section_id = 101, .start_prb = 2,  .num_prb = S1,
+                   .comp_meth = ORAN_COMP_BFP,  .iq_bitwidth = 9 },
+          .iq = iq1, .n_samples = S1 * 12 },
+        { .hdr = { .section_id = 102, .start_prb = 3,  .num_prb = S2,
+                   .comp_meth = ORAN_COMP_NONE, .iq_bitwidth = 16 },
+          .iq = iq2, .n_samples = S2 * 12 },
+    };
+
+    uint8_t buf[2048];
+    int n = oran_uplane_msg_encode(&app, secs, 3, buf, sizeof(buf));
+    assert(n > 0);
+
+    oran_uplane_msg_t msg;
+    oru_iq16_t out[(S0 + S1 + S2) * 12];
+    assert(oran_uplane_msg_decode(buf, (size_t)n, &msg, out,
+                                  sizeof(out) / sizeof(out[0])) == ORU_OK);
+
+    assert(msg.n_sections == 3);
+    assert(msg.app.frame_id == 12 && msg.app.data_direction == 1);
+    assert(msg.sec_hdrs[0].section_id == 100);
+    assert(msg.sec_hdrs[1].section_id == 101);
+    assert(msg.sec_hdrs[2].section_id == 102);
+    assert(msg.n_samples == (S0 + S1 + S2) * 12);
+
+    /* Section 0 (uncompressed) must round-trip exactly. */
+    for (int k = 0; k < S0 * 12; k++) {
+        assert(out[msg.sec_offsets[0] + k].i == iq0[k].i);
+        assert(out[msg.sec_offsets[0] + k].q == iq0[k].q);
+    }
+    /* Section 2 (uncompressed) too. */
+    for (int k = 0; k < S2 * 12; k++) {
+        assert(out[msg.sec_offsets[2] + k].i == iq2[k].i);
+        assert(out[msg.sec_offsets[2] + k].q == iq2[k].q);
+    }
+    /* Section 1 used small-amplitude BFP@9 -> exponent 0 -> exact. */
+    for (int k = 0; k < S1 * 12; k++) {
+        assert(out[msg.sec_offsets[1] + k].i == iq1[k].i);
+        assert(out[msg.sec_offsets[1] + k].q == iq1[k].q);
+    }
+
+    /* Guard: zero sections rejected. */
+    assert(oran_uplane_msg_encode(&app, secs, 0, buf, sizeof(buf)) < 0);
+}
+
 int main(void)
 {
     test_cplane();
     test_cplane3();
     test_uplane();
+    test_uplane_msg();
     printf("test_fronthaul: PASS\n");
     return 0;
 }

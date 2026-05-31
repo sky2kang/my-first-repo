@@ -70,19 +70,68 @@ DU가 RU에게 "다음 슬롯에 어떤 자원(PRB)에서 송/수신하라"를 �
 본 저장소 구현: `src/fronthaul/oran_uplane.c` (+ BFP 코어
 `src/fronthaul/bfp.c`, MSB-first 비트 패커 포함).
 
+### 4.1 메시지당 다중 섹션 + radio-app 헤더
+
+실제 프론트홀 메시지는 한 eCPRI 패킷 안에 **공통 radio-application 헤더**
+하나와 **여러 개의 섹션**을 담습니다. 각 섹션은 서로 다른 PRB 범위와
+압축 방식을 가질 수 있습니다 (예: 데이터 섹션 + PRACH 섹션 혼재).
+
+```
+┌───────────────────── 한 U-plane eCPRI 메시지 ─────────────────────┐
+│ radio-app 헤더                                                     │
+│   dataDirection / payloadVersion / filterIndex                     │
+│   frameId / subframeId / slotId / startSymbolId / numberOfSections │
+├──────────────┬──────────────┬──────────────┬─────────────────────┤
+│ 섹션 헤더 0  │ 섹션 헤더 1  │ 섹션 헤더 2  │ ...                  │
+│ +IQ payload  │ +IQ payload  │ +IQ payload  │                      │
+│ (sectionId,  │              │              │                      │
+│  startPrbu,  │              │              │                      │
+│  numPrbu,    │              │              │                      │
+│  udCompHdr)  │              │              │                      │
+└──────────────┴──────────────┴──────────────┴─────────────────────┘
+```
+
+본 저장소 구현: `oran_uplane_msg_encode()` / `oran_uplane_msg_decode()`
+(`oran_uplane_msg_t`에 radio-app 헤더 + 섹션 헤더 배열 + 섹션별 IQ
+오프셋이 채워집니다). 섹션별 압축은 위의 단일-섹션 코덱과 동일한
+NONE/BFP 경로를 재사용합니다.
+
 ## 5. 타이밍 (매우 중요)
 
 O-RU는 정해진 윈도(window) 안에 IQ를 처리/전송해야 합니다.
 
 ```
-   T1a_max  ────▶│       │◀──── Ta3 (UL)
-                 │  슬롯 │
-  DL: DU 송신 ──▶│ 경계 │──▶ RU가 RF로 방출
-                 (PTP 동기된 공통 시간축)
+        DL 수신 윈도              UL 송신 윈도
+   [boundary-T2a_max,        [boundary+Ta3_min,
+    boundary-T2a_min]         boundary+Ta3_max]
+   ───────────■───────────────────■───────────▶ 시간
+              │                    │
+        ┌─────┴─────┐        ┌─────┴─────┐
+        │ DL packet │        │ UL packet │
+        │ 너무 이름 │EARLY   │ 마감 초과 │LATE
+        │ 윈도 안   │ON_TIME │ 윈도 안   │ON_TIME
+        │ 마감 초과 │LATE    │ 너무 이름 │EARLY
+        └───────────┘        └───────────┘
+              ▲ slot boundary (PTP 동기된 공통 시간축)
 ```
 
-- `T2a`, `Ta3`, `T1a` 등 윈도 파라미터는 M-plane(YANG)으로 설정.
+- `T2a`(DL 수신), `Ta3`(UL 송신) 윈도 파라미터는 M-plane(YANG)으로 설정.
 - 이 시간축의 기준이 **S-plane PTP** 입니다 → `05-mplane-splane.md`.
+
+### 5.1 타이밍 윈도 시뮬 스케줄러
+
+`src/fronthaul/fh_sched.c`가 이 윈도를 모델링합니다. PTP·RF 하드웨어
+없이도 호스트에서 데이터 경로 타이밍을 검증할 수 있습니다.
+
+- `fh_sched_slot_ns(scs)` — numerology(SCS)로 슬롯 길이(ns) 산출
+  (15→1000µs, 30→500µs, 60→250µs, 120→125µs).
+- `fh_sched_slot_boundary(t0, slot)` — 슬롯 경계 시각(ns).
+- `fh_sched_classify(dir, boundary, event)` — 패킷을
+  **EARLY / ON_TIME / LATE** 로 분류하고 방향별 카운터를 누적.
+
+윈도 경계값은 `config/oru-config.ini`의 `[fronthaul]`
+`t2a_*_ns` / `ta3_*_ns`로 설정하며, `oru_app`이 OPERATIONAL 진입 시
+합성 도착 샘플로 분류 동작을 시연합니다.
 
 ## 6. 본 저장소에서의 데이터 흐름 (DL 예시)
 
