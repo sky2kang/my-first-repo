@@ -5,9 +5,13 @@
 
 #include "oru/types.h"
 #include "oru/config.h"
+#include "oru/fm.h"
 
 oru_status_t mplane_init(void);
 void         mplane_shutdown(void);
+
+/* Access the M-plane fault-management store (active alarms, history). */
+fm_t        *mplane_fm(void);
 
 /*
  * Apply configuration to the radio. In production this is driven by

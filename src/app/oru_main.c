@@ -25,6 +25,7 @@
 #include "oru/cfr.h"
 #include "oru/dpd.h"
 #include "oru/perf.h"
+#include "oru/fm.h"
 #include "oru/yang.h"
 
 #include <math.h>
@@ -361,6 +362,36 @@ static int run_pm_export(void)
     return EXIT_SUCCESS;
 }
 
+/* Drive PM->alarm threshold checks over a degraded interval and print the
+ * resulting o-ran-fm active-alarm list (offline; no radio). */
+static int run_fm_demo(void)
+{
+    fm_t fm;
+    fm_init(&fm);
+
+    fm_thresholds_t th = {
+        .dl_late_max = 2, .ul_late_max = 2, .seq_gaps_max = 0,
+        .cu_orphan_max = 0, .evm_pct_max = 3.0,
+    };
+
+    /* a degraded interval: late DL packets, sequence gaps, high EVM */
+    perf_t pm;
+    perf_init(&pm);
+    for (int i = 0; i < 8; i++)  perf_dl_window(&pm, 0, 0, 1);   /* 8 late */
+    for (int i = 0; i < 3; i++)  perf_seq_gap(&pm);
+    perf_evm_sample(&pm, 4.5);
+    perf_snapshot(&pm);
+
+    size_t active = fm_check_perf(&fm, &pm, &th);
+    printf("fm demo: %zu alarm(s) active (max severity %s)\n",
+           active, fm_severity_str(fm_max_severity(&fm)));
+
+    char json[1024];
+    if (fm_to_json(&fm, json, sizeof(json)) > 0)
+        fputs(json, stdout);
+    return EXIT_SUCCESS;
+}
+
 static int opt_flag(int argc, char **argv, const char *flag)
 {
     for (int i = 1; i < argc; i++)
@@ -488,6 +519,8 @@ int main(int argc, char **argv)
         return run_dpd_demo();
     if (opt_flag(argc, argv, "--export-pm"))
         return run_pm_export();
+    if (opt_flag(argc, argv, "--demo-fm"))
+        return run_fm_demo();
 
 #ifdef HAL_TARGET
     const char *build = "target";

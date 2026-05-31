@@ -5,11 +5,19 @@
 
 #define TAG "mplane"
 
+static fm_t g_fm;
+
+fm_t *mplane_fm(void)
+{
+    return &g_fm;
+}
+
 oru_status_t mplane_init(void)
 {
     /* TODO(target): connect to sysrepo, subscribe to O-RAN YANG modules
      * (o-ran-uplane-conf, o-ran-module-cap, o-ran-fm, ...), and register
      * edit-config change callbacks that call mplane_apply_config(). */
+    fm_init(&g_fm);
     LOGI(TAG, "init (NETCONF/YANG management)");
     return ORU_OK;
 }
@@ -49,6 +57,7 @@ oru_status_t mplane_apply_config(const oru_config_t *cfg,
 
 void mplane_raise_alarm(const char *fault_id, const char *text)
 {
-    /* TODO(target): push an o-ran-fm alarm notification upstream. */
-    LOGW(TAG, "ALARM %s: %s", fault_id ? fault_id : "?", text ? text : "");
+    /* Record a MAJOR alarm in the FM store (which logs the raise). On the
+     * target the FM layer also pushes an o-ran-fm notification upstream. */
+    fm_raise(&g_fm, fault_id ? fault_id : "UNKNOWN", FM_MAJOR, text);
 }

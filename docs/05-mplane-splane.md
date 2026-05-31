@@ -58,6 +58,26 @@ O-RAN은 측정 구간(보통 15분/24시간)마다 카운터를 모아 SMO에 �
 - CLI: `oru_app --export-pm` 로 샘플 PM 인터벌 JSON을 인쇄.
   `demo_slot_loop`은 데이터패스 카운터를 PM 인터벌로 접어 보고합니다.
 
+### 결함 관리 (FM, o-ran-fm)
+
+O-RU는 결함을 **알람**(fault-id, severity, raised/cleared 상태)으로
+SMO에 보고합니다. 알람은 한 번 찍고 끝나는 로그가 아니라 **상태**입니다:
+결함이 나타나면 raise, 사라지면 clear, 이미 active한 알람을 다시 raise하면
+중복 생성 없이 갱신(raise-count 증가)합니다. `src/mplane/fm.c`:
+
+- `fm_raise()` / `fm_clear()` — 활성 알람 테이블 관리. raise는 최초
+  전환 시에만 history 이벤트를 기록.
+- `fm_max_severity()` / `fm_active_count()` — 집계 조회.
+- `fm_check_perf()` — 닫힌 PM 구간(`perf_t.last`)을 임계값
+  (`fm_thresholds_t`: dl_late/ul_late/seq_gaps/cu_orphan/EVM%)과 대조해
+  자동으로 알람을 raise/clear. 다음 정상 구간에서 자동 clear.
+- `fm_to_json()` — 활성 알람 목록을 `o-ran-fm:active-alarm-list` JSON으로
+  직렬화.
+- `mplane_raise_alarm()`은 이제 FM 스토어(`mplane_fm()`)로 전달됩니다.
+- CLI: `oru_app --demo-fm` 로 degraded PM 구간 → 알람 생성 → JSON을 시연.
+
+## S-plane — 동기 평면
+
 O-RU의 모든 타이밍 기준. **IEEE 1588v2 PTP** (+ 옵션 **SyncE**).
 
 ```
