@@ -24,6 +24,7 @@
 #include "oru/beamform.h"
 #include "oru/cfr.h"
 #include "oru/dpd.h"
+#include "oru/perf.h"
 #include "oru/yang.h"
 
 #include <math.h>
@@ -334,6 +335,32 @@ static int run_dpd_demo(void)
     return (evm_after < evm_before) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+/* Print a performance-management interval as YANG/JSON instance data from a
+ * small synthetic measurement set (offline; no radio). */
+static int run_pm_export(void)
+{
+    perf_t pm;
+    perf_init(&pm);
+    for (int i = 0; i < 100; i++) {
+        perf_rx_packet(&pm, 1200);
+        perf_tx_packet(&pm, 1200);
+        perf_dl_window(&pm, 1, 0, 0);
+        perf_ul_window(&pm, 1, 0);
+        perf_cu_result(&pm, 1, 0, 0);
+        perf_evm_sample(&pm, 1.6);
+    }
+    perf_dl_window(&pm, 0, 0, 1);   /* one late DL */
+    perf_seq_gap(&pm);
+    perf_snapshot(&pm);
+
+    char json[2048];
+    int n = perf_to_json(&pm, json, sizeof(json));
+    if (n < 0)
+        return EXIT_FAILURE;
+    fputs(json, stdout);
+    return EXIT_SUCCESS;
+}
+
 static int opt_flag(int argc, char **argv, const char *flag)
 {
     for (int i = 1; i < argc; i++)
@@ -418,6 +445,27 @@ static void demo_slot_loop(const oru_config_t *cfg, uint32_t scs_hz)
          (unsigned long long)dp.stats.dl_dropped_late,
          (unsigned long long)dp.stats.ul_sent,
          (unsigned long long)dp.stats.ul_late);
+
+    /* Fold the datapath counters into a PM measurement interval and report
+     * it, the way the O-RU would publish o-ran-performance-management. */
+    perf_t pm;
+    perf_init(&pm);
+    for (uint64_t i = 0; i < dp.stats.dl_delivered; i++)
+        perf_dl_window(&pm, 1, 0, 0);
+    for (uint64_t i = 0; i < dp.stats.dl_dropped_late; i++)
+        perf_dl_window(&pm, 0, 0, 1);
+    for (uint64_t i = 0; i < dp.stats.ul_sent; i++) {
+        perf_tx_packet(&pm, 0);
+        perf_ul_window(&pm, dp.stats.ul_late ? 0 : 1, 0);
+    }
+    for (uint64_t i = 0; i < dp.stats.dl_delivered; i++)
+        perf_rx_packet(&pm, 0);
+    perf_snapshot(&pm);
+    LOGI(TAG, "PM interval %llu: rx_pkts=%llu tx_pkts=%llu dl_late=%llu",
+         (unsigned long long)pm.interval_id,
+         (unsigned long long)pm.last.rx_packets,
+         (unsigned long long)pm.last.tx_packets,
+         (unsigned long long)pm.last.dl_late);
 }
 
 int main(int argc, char **argv)
@@ -438,6 +486,8 @@ int main(int argc, char **argv)
         return run_cfr_demo();
     if (opt_flag(argc, argv, "--demo-dpd"))
         return run_dpd_demo();
+    if (opt_flag(argc, argv, "--export-pm"))
+        return run_pm_export();
 
 #ifdef HAL_TARGET
     const char *build = "target";

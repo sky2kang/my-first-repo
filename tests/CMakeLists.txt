@@ -61,3 +61,7 @@ add_test(NAME cfr COMMAND test_cfr)
 add_executable(test_dpd test_dpd.c)
 target_link_libraries(test_dpd PRIVATE oru_core)
 add_test(NAME dpd COMMAND test_dpd)
+
+add_executable(test_perf test_perf.c)
+target_link_libraries(test_perf PRIVATE oru_core)
+add_test(NAME perf COMMAND test_perf)

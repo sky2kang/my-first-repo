@@ -28,6 +28,7 @@
 - [x] 디지털 빔포밍 가중치 적용(beamId→안테나) 시뮬 (`beamform.c`, `--demo-beamform`)
 - [x] CFR(crest factor reduction) PAPR 저감 시뮬 (`cfr.c`, `--demo-cfr`)
 - [x] DPD(digital pre-distortion) PA 선형화 + 적응 시뮬 (`dpd.c`, `--demo-dpd`)
+- [x] 성능 관리(PM) 카운터 집계 + YANG/JSON export (`perf.c`, `--export-pm`)
 
 > Phase 1(호스트 기능 심화) 항목 완료. 남은 실시간화(전용 스레드/CPU 핀,
 > 실제 PTP 클럭 연동)와 실제 패킷 I/O는 Phase 2(하드웨어)에서 다룹니다.

@@ -42,7 +42,21 @@ YANG 인스턴스 데이터에 해당).
 - CLI: `oru_app --export-yang` 로 검증 후 JSON을 표준출력에 인쇄.
   샘플 결과는 `config/yang/oru-uplane-conf.sample.json`.
 
-## S-plane — 동기 평면
+### 성능 관리 (PM, o-ran-performance-management)
+
+O-RAN은 측정 구간(보통 15분/24시간)마다 카운터를 모아 SMO에 보고합니다.
+`src/mplane/perf.c`가 그 집계 계층입니다.
+
+- 각 서브시스템(datapath/fronthaul/cu_match)이 만드는 카운터를 한 곳에
+  누적: 송수신 패킷/바이트, eAxC seq 갭, 타이밍 윈도 결과(DL/UL
+  on-time/early/late), C/U 정합 결과(matched/orphan/out-of-range), 평균
+  EVM%.
+- `perf_snapshot()` — 현재 측정 구간을 닫아 `last`로 스냅샷하고 `live`를
+  리셋(interval-id 증가). 다음 구간은 독립적으로 누적.
+- `perf_to_json()` — 닫힌 구간을 `o-ran-performance-management` 형태의
+  JSON 인스턴스 데이터로 직렬화.
+- CLI: `oru_app --export-pm` 로 샘플 PM 인터벌 JSON을 인쇄.
+  `demo_slot_loop`은 데이터패스 카운터를 PM 인터벌로 접어 보고합니다.
 
 O-RU의 모든 타이밍 기준. **IEEE 1588v2 PTP** (+ 옵션 **SyncE**).
 

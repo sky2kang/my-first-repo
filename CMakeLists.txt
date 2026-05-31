@@ -51,6 +51,7 @@ add_library(oru_core STATIC
     src/splane/splane.c
     src/mplane/mplane.c
     src/mplane/yang.c
+    src/mplane/perf.c
 )
 target_include_directories(oru_core PUBLIC
     ${CMAKE_SOURCE_DIR}/include
