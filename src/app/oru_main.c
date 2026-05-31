@@ -20,6 +20,7 @@
 #include "oru/comp_bench.h"
 #include "oru/fh_packet.h"
 #include "oru/cu_match.h"
+#include "oru/prach.h"
 #include "oru/yang.h"
 
 #include <math.h>
@@ -179,6 +180,47 @@ static int run_fh_demo(void)
     return (r == CU_MATCH_OK && complete) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+/*
+ * PRACH occasion demo (no radio): a DU schedules a PRACH occasion with a
+ * C-plane Section Type 3, a UE transmits a Zadoff-Chu preamble at some
+ * cyclic shift, and the O-RU detects it by correlation. Shows the
+ * Section-Type-3 -> PRACH-detection path end to end.
+ */
+static int run_prach_demo(void)
+{
+    const uint16_t root = 22;
+    const uint16_t ue_shift = 35;
+
+    /* DU schedules the PRACH occasion (placement carried in Section Type 3). */
+    oran_cplane_section3_t s3 = {
+        .frame_id = 4, .slot_id = 0, .start_symbol_id = 0,
+        .start_prb = 0, .num_prb = 12, .time_offset = 0,
+        .frame_structure = 0x31, .cp_length = 144, .freq_offset = 0,
+    };
+    printf("prach demo: PRACH occasion scheduled (frame=%u slot=%u "
+           "PRB[%u..%u) root=%u)\n",
+           s3.frame_id, s3.slot_id, s3.start_prb,
+           s3.start_prb + s3.num_prb, root);
+
+    /* UE transmits a ZC preamble at ue_shift; add a little noise. */
+    oru_iq16_t rx[PRACH_NZC];
+    prach_gen_preamble(root, ue_shift, 4000, rx);
+    uint32_t st = 0x9e3779b9u;
+    for (uint16_t n = 0; n < PRACH_NZC; n++) {
+        st = st * 1664525u + 1013904223u;
+        rx[n].i = (int16_t)(rx[n].i + (int)((st >> 20) % 401) - 200);
+        rx[n].q = (int16_t)(rx[n].q + (int)((st >> 8) % 401) - 200);
+    }
+
+    /* O-RU correlates against the known root. */
+    prach_detect_t d;
+    prach_detect(rx, root, 5.0, &d);
+    printf("prach demo: detect %s shift=%u (tx=%u) ratio=%.1f\n",
+           d.detected ? "DETECTED" : "MISS", d.shift, ue_shift, d.ratio);
+
+    return (d.detected && d.shift == ue_shift) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
 static int opt_flag(int argc, char **argv, const char *flag)
 {
     for (int i = 1; i < argc; i++)
@@ -275,6 +317,8 @@ int main(int argc, char **argv)
         return run_comp_benchmark();
     if (opt_flag(argc, argv, "--demo-fh"))
         return run_fh_demo();
+    if (opt_flag(argc, argv, "--demo-prach"))
+        return run_prach_demo();
 
 #ifdef HAL_TARGET
     const char *build = "target";

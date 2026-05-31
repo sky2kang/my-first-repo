@@ -260,3 +260,29 @@ fh demo: parsed C-plane/S1 seq=0 -> grant slot=0 PRB[0..4)
 fh demo: parsed U-plane seq=1 -> match=OK grant_complete=yes
 fh demo: rx pkts_ok=2 seq_gaps=0
 ```
+
+## 10. PRACH 검출 시뮬레이션
+
+DU가 Section Type 3로 PRACH occasion(시간/주파수 위치)을 스케줄하면,
+UE는 그 occasion에 **Zadoff-Chu(ZC) preamble**을 송신하고, O-RU는 상관
+(correlation)으로 어떤 preamble이 왔는지 검출합니다.
+
+`src/fronthaul/prach.c` (주파수영역 모델, 짧은 ZC 길이 Nzc=139):
+
+- `prach_gen_preamble(root, shift, amp, out)` — 논리 root와 cyclic
+  shift로 ZC preamble 생성. ZC는 일정 진폭(constant amplitude)이며,
+  자기 자신의 cyclic shift된 사본과의 상관이 임펄스가 되는 성질을 가짐.
+- `prach_detect(rx, root, threshold, out)` — 알려진 root에 대해 모든
+  cyclic shift에서 상관을 계산, **peak/mean 비율**이 threshold를 넘으면
+  검출로 판정하고 추정 shift를 보고.
+
+ZC의 임펄스 성질 덕에 잡음이 있어도 정확한 shift를 복원합니다. 잘못된
+root나 잡음만 있을 때는 임펄스가 없어 비율이 낮아 오검출하지 않습니다.
+
+CLI `oru_app --demo-prach`:
+
+```
+$ oru_app --demo-prach
+prach demo: PRACH occasion scheduled (frame=4 slot=0 PRB[0..12) root=22)
+prach demo: detect DETECTED shift=35 (tx=35) ratio=97.2
+```

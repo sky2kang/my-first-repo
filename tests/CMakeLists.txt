@@ -45,3 +45,7 @@ add_test(NAME comp_bench COMMAND test_comp_bench)
 add_executable(test_fh_packet test_fh_packet.c)
 target_link_libraries(test_fh_packet PRIVATE oru_core)
 add_test(NAME fh_packet COMMAND test_fh_packet)
+
+add_executable(test_prach test_prach.c)
+target_link_libraries(test_prach PRIVATE oru_core)
+add_test(NAME prach COMMAND test_prach)

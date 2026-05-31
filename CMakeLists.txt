@@ -43,6 +43,7 @@ add_library(oru_core STATIC
     src/fronthaul/cu_match.c
     src/fronthaul/comp_bench.c
     src/fronthaul/fh_packet.c
+    src/fronthaul/prach.c
     src/fronthaul/fronthaul.c
     src/splane/splane.c
     src/mplane/mplane.c
