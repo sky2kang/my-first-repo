@@ -1,0 +1,21 @@
+# systemd unit template for running oru_app on the Zynq target.
+# Install to /etc/systemd/system/oru-app.service then:
+#   systemctl daemon-reload && systemctl enable --now oru-app
+#
+# Ensure ptp4l/phc2sys (S-plane) start before this unit in production.
+[Unit]
+Description=P5G O-RU application (Zynq + ADRV9025)
+After=network-online.target ptp4l.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/oru/oru_app --config /opt/oru/oru-config.ini --profile /opt/oru/adrv9025_profile.bin
+Restart=on-failure
+RestartSec=2
+# Real-time-ish scheduling for the datapath (tune for your platform):
+# CPUAffinity=2 3
+# Nice=-10
+
+[Install]
+WantedBy=multi-user.target

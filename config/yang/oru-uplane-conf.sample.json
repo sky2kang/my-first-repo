@@ -1,0 +1,24 @@
+{
+  "o-ran-uplane-conf:user-plane-configuration": {
+    "tx-array-carriers": [
+      {
+        "name": "n78-tx",
+        "absolute-frequency-center": 3500000000,
+        "channel-bandwidth": 100000,
+        "subcarrier-spacing": 30000,
+        "duplex-scheme": "TDD",
+        "active": "ACTIVE",
+        "number-of-antennas": 4
+      }
+    ],
+    "rx-array-carriers": [
+      {
+        "name": "n78-rx",
+        "absolute-frequency-center": 3500000000,
+        "channel-bandwidth": 100000,
+        "subcarrier-spacing": 30000,
+        "number-of-antennas": 4
+      }
+    ]
+  }
+}
