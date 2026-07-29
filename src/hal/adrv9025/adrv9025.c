@@ -42,11 +42,14 @@ oru_status_t hal_init(const char *profile_path)
          profile_path ? profile_path : "(none)");
 
 #ifdef HAL_TARGET
-    /* TODO(target):
-     *   1. open SPI, read ADRV9025 product id register, verify
-     *   2. adi_adrv9025_PreMcsInit() with the loaded profile/.bin
-     *   3. multi-chip sync (MCS)
-     *   4. adi_adrv9025_PostMcsInit()
+    /* TODO(target): see docs/08-hal-adi-api-mapping.md §1.
+     *   1. adi_adrv9025_HwOpen() + adi_adrv9025_SpiVerify()
+     *      + adi_adrv9025_ProductIdGet() to confirm the chip
+     *   2. adi_adrv9025_ConfigFileLoad() with the TES profile
+     *   3. adi_adrv9025_PreMcsInit_v2() + _NonBroadCast()
+     *   4. adi_adrv9025_MultichipSyncSet() -> SYSREF ->
+     *      adi_adrv9025_MultichipSyncStatusGet()
+     *   5. adi_adrv9025_PostMcsInit() + adi_adrv9025_RadioctrlInit()
      * Return ORU_ERR_HW on any failure. */
 #else
     if (!profile_path)
@@ -85,7 +88,8 @@ oru_status_t hal_set_carrier(uint64_t center_freq_hz)
     LOGI(TAG, "set carrier LO = %llu Hz",
          (unsigned long long)center_freq_hz);
 #ifdef HAL_TARGET
-    /* TODO(target): adi_adrv9025_RfPllFrequencySet(...) */
+    /* TODO(target): adi_adrv9025_PllFrequencySet_v2()
+     * (docs/08-hal-adi-api-mapping.md §3) */
 #endif
     return ORU_OK;
 }

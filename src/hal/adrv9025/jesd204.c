@@ -31,8 +31,13 @@ oru_status_t jesd204_bringup(jesd204_link_t *link)
         link->state = seq[i];
         LOGD(TAG, "link state -> %s", jesd204_state_str(link->state));
 #ifdef HAL_TARGET
-        /* TODO(target): poll IP status register here, return ORU_ERR_TIMEOUT
-         * if the stage does not complete within the deadline. */
+        /* TODO(target): see docs/08-hal-adi-api-mapping.md §2.
+         * Per stage: (re)enable links with adi_adrv9025_FramerLinkStateSet()
+         * / DfrmLinkStateSet(), gate SYSREF via *SysrefCtrlSet(), check ILAS
+         * with adi_adrv9025_DfrmIlasMismatchGet(), then poll
+         * DeframerStatusGet()/DfrmLinkConditionGet() (and the Xilinx JESD204
+         * IP status) until User Data Ready; return ORU_ERR_TIMEOUT if the
+         * stage does not complete within the deadline. */
 #endif
     }
 

@@ -86,7 +86,8 @@ O-RU(Radio Unit)는 5G 기지국(gNB)을 O-RAN 표준으로 분할(disaggregatio
 5. [`docs/05-mplane-splane.md`](docs/05-mplane-splane.md) — 관리/동기 평면
 6. [`docs/06-build-and-deploy.md`](docs/06-build-and-deploy.md) — 타겟 빌드 & 배포
 7. [`docs/07-roadmap.md`](docs/07-roadmap.md) — 단계별 구현 로드맵
-8. [`docs/glossary.md`](docs/glossary.md) — 용어집
+8. [`docs/08-hal-adi-api-mapping.md`](docs/08-hal-adi-api-mapping.md) — HAL 스텁 ↔ ADI API 매핑
+9. [`docs/glossary.md`](docs/glossary.md) — 용어집
 
 ---
 
